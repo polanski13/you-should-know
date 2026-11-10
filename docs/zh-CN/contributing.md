@@ -51,4 +51,6 @@ PR 应说明问题、行为变化和验证方法，不混入无关修改。改�
 
 OpenCode 构建 SDK 的开发依赖较多。独立的生产审计和安装测试用于防止 SDK 工具意外成为运行时依赖。CI 不执行需要登录的模型请求，也不自动发布包。
 
+截至 2026 年 11 月 10 日，完整开发依赖审计报告了 SDK 间接依赖 `glob` 和 `minimatch` 的中危问题（[GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4)、[GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)）。SDK 仍固定使用受影响的主版本；生产安装不包含这些包。应关注上游 SDK 更新，而不是为了清空审计结果而强制覆盖不兼容的主版本。
+
 所有贡献遵循仓库的 [MIT 许可证](../../LICENSE)。

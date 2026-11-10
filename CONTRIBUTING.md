@@ -55,4 +55,6 @@ Bug reports should include the host/version, operating system, Node version, obs
 
 The OpenCode build SDK brings a larger development-only dependency graph. Production auditing and isolated installation are separate checks so SDK tooling does not become a runtime dependency accidentally. CI does not run authenticated model checks or automatically publish packages.
 
+As of November 10, 2026, the full development audit reports moderate advisories in the SDK's transitive `glob` and `minimatch` dependencies ([GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4), [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)). The SDK still pins affected major versions; these packages are absent from the production install. Recheck upstream SDK updates rather than forcing incompatible major overrides to silence the audit.
+
 Contributions are distributed under the repository's [MIT license](LICENSE).
