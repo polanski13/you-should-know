@@ -5,6 +5,7 @@ param(
     [switch]$NoPath
 )
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 $Version = if ($env:YSK_VERSION) { $env:YSK_VERSION } else { '0.2.0' }
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid YSK_VERSION' }
 $Architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
@@ -28,7 +29,13 @@ try {
     $Line = ($Checksums -split "`n" | Where-Object { $_.Trim() -match ('^[0-9a-f]{64}\s+' + [regex]::Escape($Asset) + '$') })
     if (@($Line).Count -ne 1) { throw 'Missing release checksum.' }
     $Expected = ($Line.Trim() -split '\s+')[0]
-    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $Archive).Hash.ToLowerInvariant() -ne $Expected) { throw 'Release checksum mismatch; installation stopped.' }
+    $Sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $Stream = [System.IO.File]::OpenRead($Archive)
+        try { $Actual = [BitConverter]::ToString($Sha256.ComputeHash($Stream)).Replace('-', '').ToLowerInvariant() }
+        finally { $Stream.Dispose() }
+    } finally { $Sha256.Dispose() }
+    if ($Actual -ne $Expected) { throw 'Release checksum mismatch; installation stopped.' }
     $Payload = Join-Path $Temporary 'payload'
     New-Item -ItemType Directory -Path $Payload | Out-Null
     & tar -xzf $Archive -C $Payload
