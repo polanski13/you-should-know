@@ -1,0 +1,8 @@
+{
+  "observer": { "language": "auto" },
+  "provider": {
+    "type": "anthropic",
+    "model": "MODEL_ID",
+    "apiKeyEnv": "ANTHROPIC_API_KEY"
+  }
+}

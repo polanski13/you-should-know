@@ -1,0 +1,7 @@
+{
+  "observer": {
+    "language": "auto",
+    "maxChecksPerHour": 8
+  },
+  "provider": { "type": "codex", "executable": "codex" }
+}

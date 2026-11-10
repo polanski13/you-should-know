@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.work/
+.DS_Store
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.tgz
+.you-should-know/

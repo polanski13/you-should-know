@@ -1,0 +1,82 @@
+{
+  "name": "@polanski13/you-should-know",
+  "version": "0.1.0",
+  "description": "A quiet second opinion for your coding agent. Context-aware notes for OpenCode, Codex, Claude Code, and MCP clients.",
+  "type": "module",
+  "license": "MIT",
+  "author": "polanski13 <drose9390@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/polanski13/you-should-know.git"
+  },
+  "homepage": "https://github.com/polanski13/you-should-know#readme",
+  "bugs": "https://github.com/polanski13/you-should-know/issues",
+  "keywords": [
+    "opencode",
+    "codex",
+    "claude-code",
+    "mcp",
+    "coding-agent",
+    "plugin"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "bin": {
+    "ysk": "dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/opencode/index.d.ts",
+      "import": "./dist/opencode/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./rpc": {
+      "types": "./dist/opencode/rpc.d.ts",
+      "import": "./dist/opencode/rpc.js"
+    },
+    "./tui": "./dist/opencode/tui.js",
+    "./gui-experimental": "./dist/gui-experimental.cjs"
+  },
+  "files": [
+    "dist",
+    "integrations",
+    "docs",
+    "README*.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "test:package": "node scripts/smoke-package.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run typecheck && npm test && npm run build && npm run format:check",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "proper-lockfile": "^4.1.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "~2.2.6",
+    "@types/node": "^22.0.0",
+    "@types/proper-lockfile": "^4.1.4",
+    "prettier": "^3.9.10",
+    "solid-js": "^1.9.18",
+    "tsx": "^4.23.15",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.7",
+    "vite-plugin-solid": "^2.11.15"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

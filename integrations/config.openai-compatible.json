@@ -1,0 +1,9 @@
+{
+  "observer": { "language": "auto" },
+  "provider": {
+    "type": "openai-compatible",
+    "model": "MODEL_ID",
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKeyEnv": "OPENAI_API_KEY"
+  }
+}

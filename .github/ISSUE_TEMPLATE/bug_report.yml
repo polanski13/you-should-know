@@ -1,0 +1,29 @@
+name: Bug report
+description: Report an observer, integration, or installation problem.
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Host and version, operating system, Node version, and installation method.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include the expected behavior and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Use a synthetic conversation. Remove credentials, private project details, and real transcripts.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Relevant diagnostics
+      description: Optional redacted output from ysk doctor or the host's plugin status.

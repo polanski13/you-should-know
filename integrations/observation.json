@@ -1,0 +1,18 @@
+{
+  "host": "cli",
+  "sessionId": "example-session",
+  "turnId": "example-turn",
+  "step": 6,
+  "messages": [
+    {
+      "id": "user-1",
+      "role": "user",
+      "text": "Keep the monthly bill below $100 while adding follow-up questions."
+    },
+    {
+      "id": "agent-1",
+      "role": "assistant",
+      "text": "I enabled caching. Every first request costs 25% more; repeat requests are cheaper. Most users currently ask only one question."
+    }
+  ]
+}

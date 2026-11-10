@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "you-should-know": {
+      "command": "node",
+      "args": [
+        "/absolute/path/to/you-should-know/dist/cli.js",
+        "mcp",
+        "--cwd",
+        "/absolute/path/to/project"
+      ]
+    }
+  }
+}
