@@ -58,18 +58,18 @@ export default Plugin.define({
     ctx.add(
       Style,
       `
-      .ysk-note { width:min(400px,calc(100vw - 48px)); padding:14px; font:inherit; }
-      .ysk-note p { margin:0 0 12px; line-height:1.55; white-space:pre-wrap; overflow-wrap:anywhere; }
-      .ysk-note details { margin:12px 0; font-size:12px; opacity:.8; }
-      .ysk-note summary { cursor:pointer; }
-      .ysk-note blockquote { margin:8px 0; padding-left:10px; border-left:2px solid currentColor; }
-      .ysk-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
-      .ysk-actions button { font:inherit; font-size:12px; color:inherit; padding:6px 10px; border:1px solid color-mix(in srgb,currentColor 18%,transparent); border-radius:7px; background:transparent; cursor:pointer; transition:background .12s ease; }
-      .ysk-actions button:hover { background:color-mix(in srgb,currentColor 8%,transparent); }
-      .ysk-actions button:focus-visible { outline:2px solid currentColor; outline-offset:2px; }
-      .ysk-actions button:disabled { opacity:.5; cursor:wait; }
-      .ysk-error { font-size:12px; }
-      @media(prefers-reduced-motion:reduce) { .ysk-actions button { transition:none; } }
+      .ysk-note { box-sizing:border-box; width:100%; min-width:0; padding:8px; font-family:inherit; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+      .ysk-body { min-width:0; max-height:min(360px,50vh); overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+      .ysk-note h3 { margin:0 0 10px; font-size:13px; font-weight:600; line-height:1.45; }
+      .ysk-note p { margin:0; white-space:pre-wrap; }
+      .ysk-explanation { opacity:.82; }
+      .ysk-note details { margin-top:12px; font-size:11px; }
+      .ysk-note summary { width:fit-content; max-width:100%; cursor:pointer; opacity:.7; }
+      .ysk-note summary:hover, .ysk-note summary:focus-visible { opacity:1; }
+      .ysk-note blockquote { margin:8px 0 0; padding:2px 0 2px 10px; border-left:2px solid color-mix(in srgb,currentColor 20%,transparent); opacity:.75; }
+      .ysk-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin-top:12px; padding-top:10px; border-top:1px solid color-mix(in srgb,currentColor 10%,transparent); }
+      .ysk-note .ysk-actions button { box-sizing:border-box; width:100%; min-width:0; max-width:100%; height:auto; min-height:28px; padding:6px 8px; font-size:12px; line-height:1.35; white-space:normal; overflow-wrap:anywhere; }
+      .ysk-note .ysk-error { margin-top:10px; font-size:12px; }
     `,
     )
     ctx.add(ComposerPill, {
@@ -78,8 +78,9 @@ export default Plugin.define({
         const note = active()
         if (!note || note.sessionId !== props.session.id) return undefined
         return {
-          label: note.summary,
-          title: `${note.kind === "heads_up" ? t().headsUp : t().explainer} · ${note.summary}`,
+          label: note.kind === "heads_up" ? t().headsUp : t().explainer,
+          icon: "info",
+          title: t().explainer,
         }
       },
       menu: (props) => {
@@ -108,26 +109,35 @@ export default Plugin.define({
           <Show when={active()}>
             {(note) => (
               <section class="ysk-note" aria-label={t().explainer}>
-                <p>{note().explanation}</p>
-                <details>
-                  <summary>{t().evidence}</summary>
-                  <For each={note().evidence}>
-                    {(evidence) => <blockquote>{evidence.quote}</blockquote>}
-                  </For>
-                </details>
+                <div class="ysk-body" tabindex="0" aria-label={note().summary}>
+                  <h3>{note().summary}</h3>
+                  <p class="ysk-explanation">{note().explanation}</p>
+                  <details>
+                    <summary>
+                      {t().evidence} · {note().evidence.length}
+                    </summary>
+                    <For each={note().evidence}>
+                      {(evidence) => <blockquote>{evidence.quote}</blockquote>}
+                    </For>
+                  </details>
+                </div>
                 <Show when={failed()}>
                   <p class="ysk-error" role="alert">
                     {t().unavailable}
                   </p>
                 </Show>
                 <div class="ysk-actions">
-                  <button disabled={busy()} onClick={() => void act("helpful")}>
+                  <ctx.ui.Button
+                    size="small"
+                    variant="contrast"
+                    disabled={busy()}
+                    onClick={() => void act("helpful")}
+                  >
                     {t().understood}
-                  </button>
-                  <button disabled={busy()} onClick={() => void act("known")}>
-                    {t().known}
-                  </button>
-                  <button
+                  </ctx.ui.Button>
+                  <ctx.ui.Button
+                    size="small"
+                    variant="neutral"
                     disabled={busy()}
                     onClick={() => {
                       if (note().sessionId !== props.session.id) return
@@ -139,10 +149,23 @@ export default Plugin.define({
                     }}
                   >
                     {t().discuss}
-                  </button>
-                  <button disabled={busy()} onClick={() => void act("dismissed")}>
+                  </ctx.ui.Button>
+                  <ctx.ui.Button
+                    size="small"
+                    variant="ghost-muted"
+                    disabled={busy()}
+                    onClick={() => void act("known")}
+                  >
+                    {t().known}
+                  </ctx.ui.Button>
+                  <ctx.ui.Button
+                    size="small"
+                    variant="ghost-muted"
+                    disabled={busy()}
+                    onClick={() => void act("dismissed")}
+                  >
                     {t().dismiss}
-                  </button>
+                  </ctx.ui.Button>
                 </div>
               </section>
             )}

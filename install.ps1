@@ -6,7 +6,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$Version = if ($env:YSK_VERSION) { $env:YSK_VERSION } else { '0.2.0' }
+$Version = if ($env:YSK_VERSION) { $env:YSK_VERSION } else { '0.2.1' }
 if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid YSK_VERSION' }
 $Architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
 if ($Architecture -notin @('x64', 'arm64')) { throw 'Supported architectures: x64 and arm64.' }

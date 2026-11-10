@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — 2026-11-11
+
+### Fixed
+
+- OpenCode note content now fits the host's 320-pixel popover instead of overflowing with a fixed 400-pixel width.
+- Compact typography and a short composer pill keep observations unobtrusive; the full summary appears inside the card.
+- Native OpenCode buttons use a two-column layout, and long explanations and evidence scroll while actions stay visible.
+
 ## 0.2.0 — 2026-11-11
 
 ### Added

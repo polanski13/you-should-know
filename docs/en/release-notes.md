@@ -1,4 +1,10 @@
-## Install in one command
+## OpenCode card layout fix
+
+Version 0.2.1 fixes text and buttons overflowing the OpenCode popover. Notes now use a compact pill, a clear summary inside the card, native OpenCode buttons in two rows, and scrollable content for long explanations and evidence.
+
+The actual GUI bundle was checked at 220, 280, and 320 pixels in English, Russian, and Simplified Chinese, including long unbroken text and expanded evidence.
+
+## Install or update in one command
 
 **macOS / Linux**
 

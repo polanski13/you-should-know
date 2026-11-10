@@ -70,7 +70,7 @@ Add another client later with `ysk setup --host claude-code`. See the [installat
 
 Select **OpenCode** during setup. The installer adds a global plugin entry for the server, TUI, and Desktop, preserving JSONC comments and existing plugin options. OpenCode reloads configuration automatically and uses its existing model connection.
 
-Continue working normally. A note appears when a check finds something worth surfacing. Expand the pill to read the explanation and evidence. **Understood** and **I knew this** remember the topic; **Discuss in chat** puts the note in the Desktop composer for you to send. In the TUI, selecting Discuss sends an explicit follow-up.
+Continue working normally. A compact **Heads up** or **You should know** pill appears when a check finds something worth surfacing. Open it to read the summary, explanation, and evidence. **Understood** and **I knew this** remember the topic; **Discuss in chat** puts the note in the Desktop composer for you to send. In the TUI, selecting Discuss sends an explicit follow-up.
 
 ### Codex
 

@@ -2,7 +2,7 @@
 set -eu
 umask 077
 
-version="${YSK_VERSION:-0.2.0}"
+version="${YSK_VERSION:-0.2.1}"
 case "$version" in ''|*[!0-9.]*|.*|*..*) echo "Invalid YSK_VERSION" >&2; exit 1 ;; esac
 case "$(uname -s)" in Darwin) os=darwin ;; Linux) os=linux ;; *) echo "Use install.ps1 on Windows." >&2; exit 1 ;; esac
 case "$(uname -m)" in arm64|aarch64) arch=arm64 ;; x86_64|amd64) arch=x64 ;; *) echo "Supported architectures: x64 and arm64." >&2; exit 1 ;; esac
