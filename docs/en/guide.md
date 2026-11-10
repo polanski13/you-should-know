@@ -2,6 +2,58 @@
 
 [English](guide.md) · [Русский](../ru/guide.md) · [简体中文](../zh-CN/guide.md) · [README](../../README.md)
 
+## Installation and updates
+
+The [README](../../README.md#install) has the one-command installers. Releases include Node.js and support macOS, Linux/glibc, and Windows on x64 and ARM64. macOS/Linux need `curl`, `tar`, and either `shasum` or `sha256sum`; Windows needs PowerShell and `tar` (included in current Windows). Alpine/musl is not supported by the bundled runtime.
+
+Setup connects OpenCode globally and merges Codex/Claude Code hooks. It preserves the first original configuration as `<config-file>.before-ysk`. OpenCode's comments and existing observer options are retained. MCP setup prints a configuration to paste into your client; paste the new configuration again after an update.
+
+For unattended macOS/Linux installation, pass clients explicitly. With an API provider, also pass its model ID:
+
+```sh
+curl -fsSL https://github.com/polanski13/you-should-know/releases/latest/download/install.sh | sh -s -- --host claude-code --provider anthropic --model YOUR_MODEL_ID
+```
+
+Set `ANTHROPIC_API_KEY` in the client's environment. For an OpenAI-compatible API use `--provider openai-compatible` and `OPENAI_API_KEY`. Provider flags initialize a new configuration; edit the configuration file to change an existing provider. OpenCode uses its own model connection and needs no separate observer provider.
+
+PowerShell accepts explicit clients through the downloaded script:
+
+```powershell
+Invoke-WebRequest https://github.com/polanski13/you-should-know/releases/latest/download/install.ps1 -OutFile install.ps1
+& ./install.ps1 -Client "opencode,codex"
+```
+
+The default installation directory is `~/.local/share/you-should-know` (`$XDG_DATA_HOME/you-should-know` when set), or `%LOCALAPPDATA%\YouShouldKnow` on Windows. Each version has its own `versions/<version>/app` and `runtime` directories. `installation.json` records connected clients and the launcher. Versions are retained so existing sessions can finish using their original files.
+
+The launcher is `~/.local/bin/ysk` on macOS/Linux or `bin\ysk.cmd` under the Windows installation directory. Setup adds it to your shell configuration or Windows user PATH. Open a new terminal, or immediately use the absolute launcher path printed by setup.
+
+Optional environment variables, set before running the installer:
+
+| Variable          | Purpose                            |
+| ----------------- | ---------------------------------- |
+| `YSK_INSTALL_DIR` | Absolute installation directory    |
+| `YSK_BIN_DIR`     | Absolute launcher directory        |
+| `YSK_VERSION`     | Exact release version, without `v` |
+
+Use `--no-path` on macOS/Linux or `-NoPath` in PowerShell to manage PATH yourself. `ysk setup --host opencode,codex` connects clients after installation. Running the installer again without a client flag reuses the saved selections and updates their paths. To retry setup after an interruption, use the same installer command.
+
+To disconnect a client, run `ysk uninstall opencode`, `ysk uninstall codex`, or `ysk uninstall claude-code`. Future updates will respect that choice. Remove MCP entries in the client itself. To remove the software, disconnect all clients, close sessions using it, then remove the installation directory and launcher. Remove the marked You Should Know PATH block from your shell configuration, the `you-should-know.fish` file, or the installation's bin directory from Windows user PATH. [Saved notes](#storage-and-data-flow) are kept separately.
+
+### From source
+
+Development installation requires Git, npm, and Node.js 22.18+:
+
+```sh
+git clone https://github.com/polanski13/you-should-know.git
+cd you-should-know
+npm ci
+npm run build
+npm link
+ysk setup --host opencode
+```
+
+Keep the checkout in place because registered plugins and hooks refer to it. After pulling changes, run `npm ci` and `npm run build` again.
+
 ## Configuration
 
 `ysk init` creates `~/.config/you-should-know/config.json`. If `XDG_CONFIG_HOME` is set, it replaces `~/.config`. The command does not overwrite an existing file.
@@ -124,7 +176,7 @@ Codex hooks must be enabled, for example with `codex --enable hooks`. A short tu
 
 Background output does not inject instructions into the working agent. Claude's asynchronous hooks do not surface `systemMessage` directly, so delivery happens at the next prompt. Use `ysk watch` to see notes sooner. The actual display of hook messages depends on the host interface.
 
-The installer is idempotent, writes atomically, and preserves a first backup as `<config-file>.before-ysk`. It refuses malformed JSON or unexpected hook structures. Uninstall removes registrations marked `--managed-by-ysk`; it does not restore an old file over newer user changes. The installed command uses `node` on PATH and an absolute path to `dist/cli.js`.
+The installer is idempotent, writes atomically, and preserves a first backup as `<config-file>.before-ysk`. It refuses malformed JSON or unexpected hook structures. Uninstall removes registrations marked `--managed-by-ysk`; it does not restore an old file over newer user changes. Hook commands use absolute paths to the runtime and CLI, including the bundled Node.js in release installations.
 
 Hook processes share on-disk reservations. A new prompt invalidates the reservation so a stale result cannot be saved. Unlike in-process OpenCode cancellation, a different hook process may continue its already-started request until completion or timeout, consuming quota.
 
@@ -181,7 +233,7 @@ New directories/files use modes `0700`/`0600` on POSIX; Windows access is govern
 | Symptom                                                   | Check                                                                                                                                      |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | No notes                                                  | Silence is expected. Check `enabled`, `ysk resume`, cadence, budgets, and whether context has changed.                                     |
-| `ysk` not found                                           | Run `npm link` after building; ensure npm's global bin directory is on PATH.                                                               |
+| `ysk` not found                                           | Open a new terminal, or use the launcher path printed by setup. With `--no-path`, add its directory to PATH yourself.                      |
 | OpenCode plugin unavailable                               | Use a directory path, build `dist`, and check plugin status. Desktop needs a global entry.                                                 |
 | Codex hooks do nothing                                    | Check Codex version, enable `hooks`, and confirm `CODEX_HOME` matches the running client.                                                  |
 | Claude hooks do nothing                                   | Confirm asynchronous hook support, provider setup, and `CLAUDE_CONFIG_DIR`.                                                                |

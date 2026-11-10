@@ -2,6 +2,58 @@
 
 [English](../en/guide.md) · [Русский](../ru/guide.md) · [简体中文](guide.md) · [README](../../README.zh-CN.md)
 
+## 安装与更新
+
+一键安装命令见 [README](../../README.zh-CN.md#安装)。发行包自带 Node.js，支持 macOS、Linux/glibc 和 Windows 的 x64 与 ARM64。macOS/Linux 需要 `curl`、`tar` 以及 `shasum` 或 `sha256sum`；Windows 需要 PowerShell 和 `tar`（现代 Windows 自带）。内置运行时不支持 Alpine/musl。
+
+向导在全局连接 OpenCode，并合并 Codex/Claude Code 钩子。首次原始配置备份为 `<config-file>.before-ysk`。OpenCode 的注释和现有观察器选项会保留。MCP 向导输出需要粘贴到客户端的配置；更新后也需要重新粘贴新配置。
+
+macOS/Linux 无人值守安装需明确指定客户端。使用 API 提供商时，还需指定模型 ID：
+
+```sh
+curl -fsSL https://github.com/polanski13/you-should-know/releases/latest/download/install.sh | sh -s -- --host claude-code --provider anthropic --model YOUR_MODEL_ID
+```
+
+在客户端环境中设置 `ANTHROPIC_API_KEY`。OpenAI 兼容 API 使用 `--provider openai-compatible` 和 `OPENAI_API_KEY`。提供商参数仅用于创建新配置；更改已有提供商时请编辑配置文件。OpenCode 使用自己的模型连接。
+
+PowerShell 可通过下载的脚本指定客户端：
+
+```powershell
+Invoke-WebRequest https://github.com/polanski13/you-should-know/releases/latest/download/install.ps1 -OutFile install.ps1
+& ./install.ps1 -Client "opencode,codex"
+```
+
+默认安装目录为 `~/.local/share/you-should-know`（设置后为 `$XDG_DATA_HOME/you-should-know`），Windows 为 `%LOCALAPPDATA%\YouShouldKnow`。每个版本有独立的 `versions/<version>/app` 和 `runtime` 目录。`installation.json` 记录已连接客户端和启动器。旧版本会保留，供正在运行的会话继续使用。
+
+启动器位于 macOS/Linux 的 `~/.local/bin/ysk` 或 Windows 安装目录的 `bin\ysk.cmd`。向导将其加入 shell 配置或 Windows 用户 PATH。打开新终端后即可使用，也可立即运行向导输出的绝对路径。
+
+运行安装器前可设置以下环境变量：
+
+| 变量              | 用途                    |
+| ----------------- | ----------------------- |
+| `YSK_INSTALL_DIR` | 安装目录的绝对路径      |
+| `YSK_BIN_DIR`     | 启动器目录的绝对路径    |
+| `YSK_VERSION`     | 不带 `v` 的准确发行版本 |
+
+macOS/Linux 使用 `--no-path`，PowerShell 使用 `-NoPath`，可自行管理 PATH。安装后通过 `ysk setup --host opencode,codex` 连接客户端。再次运行安装器且不指定客户端时，会使用保存的选择并更新路径。安装中断后可以重新运行相同命令。
+
+通过 `ysk uninstall opencode`、`ysk uninstall codex` 或 `ysk uninstall claude-code` 断开客户端，后续更新会尊重此选择。MCP 配置需在客户端中手动删除。要移除软件，先断开客户端并关闭相关会话，然后删除安装目录和启动器。清除 shell 配置中带标记的 You Should Know PATH 块、`you-should-know.fish` 文件，或 Windows 用户 PATH 中的安装 bin 目录。[已保存提示](#存储与数据流)单独存放。
+
+### 从源码安装
+
+开发安装需要 Git、npm 和 Node.js 22.18+：
+
+```sh
+git clone https://github.com/polanski13/you-should-know.git
+cd you-should-know
+npm ci
+npm run build
+npm link
+ysk setup --host opencode
+```
+
+请保留仓库所在路径，插件和钩子会引用它。拉取更新后，重新运行 `npm ci` 和 `npm run build`。
+
 ## 配置
 
 `ysk init` 创建 `~/.config/you-should-know/config.json`。设置 `XDG_CONFIG_HOME` 后，它将替代 `~/.config`。已有文件不会被覆盖。
@@ -124,7 +176,7 @@ Codex 必须启用钩子，例如使用 `codex --enable hooks`。工具结果事
 
 后台输出不向主智能体注入指令。Claude 的异步钩子不会直接显示 `systemMessage`，因此在下一次提交消息时交付。可使用 `ysk watch` 提前查看。钩子消息的实际展示取决于宿主界面。
 
-安装器可重复运行，采用原子写入，并将首次备份保存为 `<config-file>.before-ysk`。无效 JSON 或意外的钩子结构不会被覆盖。卸载仅移除带 `--managed-by-ysk` 标记的记录，不会用旧备份覆盖用户的新设置。安装后的命令使用 PATH 中的 `node` 和 `dist/cli.js` 的绝对路径。
+安装器可重复运行，采用原子写入，并将首次备份保存为 `<config-file>.before-ysk`。无效 JSON 或意外的钩子结构不会被覆盖。卸载仅移除带 `--managed-by-ysk` 标记的记录，不会用旧备份覆盖用户的新设置。钩子命令使用运行时和 CLI 的绝对路径，发行包安装使用内置 Node.js。
 
 钩子进程共享磁盘请求占位记录。新消息使旧占位失效，防止过期结果保存。与 OpenCode 进程内取消不同，另一个钩子进程已启动的请求仍可能运行到完成或超时，并消耗额度。
 
@@ -176,18 +228,18 @@ POSIX 上新建目录和文件的权限分别为 `0700`、`0600`；Windows 使�
 
 ## 故障排查
 
-| 现象                           | 检查项                                                                             |
-| ------------------------------ | ---------------------------------------------------------------------------------- |
-| 没有提示                       | 保持安静是正常情况。检查 `enabled`、`ysk resume`、频率、预算以及上下文是否改变。   |
-| 找不到 `ysk`                   | 构建后运行 `npm link`，确认 npm 全局 bin 目录在 PATH 中。                          |
-| OpenCode 插件不可用            | 配置目录路径、构建 `dist`、检查插件状态；Desktop 需要全局配置。                    |
-| Codex 钩子无响应               | 检查版本、启用 `hooks`，并确认 `CODEX_HOME` 与客户端一致。                         |
-| Claude 钩子无响应              | 检查异步钩子支持、提供商配置及 `CLAUDE_CONFIG_DIR`。                               |
-| `watch` 有提示，客户端尚未显示 | 钩子在下一次提交消息时交付；宿主界面支持各不相同。                                 |
-| HTTP `provider_error`          | 运行 `ysk doctor`，检查模型 ID、密钥变量、端点格式与额度；不会回显提供商错误正文。 |
-| `invalid_response`             | 模型未满足严格提示结构，不保存提示。                                               |
-| `unsubstantiated`              | 原文引用不在所选上下文中，或输出未通过脱敏检查。                                   |
-| 状态错误                       | 先备份并检查状态目录；损坏文件会被保留。                                           |
+| 现象                           | 检查项                                                                                |
+| ------------------------------ | ------------------------------------------------------------------------------------- |
+| 没有提示                       | 保持安静是正常情况。检查 `enabled`、`ysk resume`、频率、预算以及上下文是否改变。      |
+| 找不到 `ysk`                   | 打开新终端，或使用向导输出的启动器路径。若使用 `--no-path`，需自行将其目录加入 PATH。 |
+| OpenCode 插件不可用            | 配置目录路径、构建 `dist`、检查插件状态；Desktop 需要全局配置。                       |
+| Codex 钩子无响应               | 检查版本、启用 `hooks`，并确认 `CODEX_HOME` 与客户端一致。                            |
+| Claude 钩子无响应              | 检查异步钩子支持、提供商配置及 `CLAUDE_CONFIG_DIR`。                                  |
+| `watch` 有提示，客户端尚未显示 | 钩子在下一次提交消息时交付；宿主界面支持各不相同。                                    |
+| HTTP `provider_error`          | 运行 `ysk doctor`，检查模型 ID、密钥变量、端点格式与额度；不会回显提供商错误正文。    |
+| `invalid_response`             | 模型未满足严格提示结构，不保存提示。                                                  |
+| `unsubstantiated`              | 原文引用不在所选上下文中，或输出未通过脱敏检查。                                      |
+| 状态错误                       | 先备份并检查状态目录；损坏文件会被保留。                                              |
 
 ## 兼容性与验证
 

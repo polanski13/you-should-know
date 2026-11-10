@@ -1,11 +1,7 @@
-import { copyFile, mkdir, open, readFile, rename, rm } from "node:fs/promises"
-import { constants } from "node:fs"
 import { homedir } from "node:os"
-import { dirname, join } from "node:path"
-import { randomUUID } from "node:crypto"
-import lockfile from "proper-lockfile"
-import { isErrno } from "../core/config.js"
+import { join } from "node:path"
 import { object } from "../providers/json-lines.js"
+import { shellQuote, updateFile, windowsQuote } from "../setup/files.js"
 
 const marker = "--managed-by-ysk"
 const events = ["PostToolUse", "Stop", "UserPromptSubmit", "SessionEnd"] as const
@@ -16,15 +12,12 @@ export function hookConfigPath(host: "codex" | "claude-code", env = process.env)
     : join(env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"), "settings.json")
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`
-}
-
 export function mergeHooks(
   existing: Record<string, unknown>,
   host: "codex" | "claude-code",
   cliPath: string,
   remove = false,
+  nodePath = process.execPath,
 ): Record<string, unknown> {
   if (
     existing.hooks !== undefined &&
@@ -53,12 +46,12 @@ export function mergeHooks(
       const async = event === "PostToolUse" || event === "Stop"
       const handler: Record<string, unknown> = {
         type: "command",
-        command: `node ${shellQuote(cliPath)} hook --host ${host} ${marker}`,
+        command: `${shellQuote(nodePath.replaceAll("\\", "/"))} ${shellQuote(cliPath.replaceAll("\\", "/"))} hook --host ${host} ${marker}`,
         timeout: async ? 190 : 10,
         ...(async ? { async: true } : {}),
       }
       if (host === "codex")
-        handler.commandWindows = `node "${cliPath.replaceAll('"', '\\"')}" hook --host ${host} ${marker}`
+        handler.commandWindows = `${windowsQuote(nodePath)} ${windowsQuote(cliPath)} hook --host ${host} ${marker}`
       filtered.push({ ...(event === "PostToolUse" ? { matcher: ".*" } : {}), hooks: [handler] })
     }
     if (filtered.length) hooks[event] = filtered
@@ -72,19 +65,10 @@ export async function installHooks(options: {
   cliPath: string
   path: string
   remove?: boolean
+  nodePath?: string
 }): Promise<boolean> {
-  await mkdir(dirname(options.path), { recursive: true, mode: 0o700 })
-  const guard = `${options.path}.ysk-write`
-  await (await open(guard, "a", 0o600)).close()
-  const release = await lockfile.lock(guard, { retries: 5 })
-  try {
-    let original: string | undefined
-    try {
-      original = await readFile(options.path, "utf8")
-    } catch (error) {
-      if (!isErrno(error, "ENOENT")) throw error
-    }
-    if (original === undefined && options.remove) return false
+  return updateFile(options.path, (original) => {
+    if (original === undefined && options.remove) return undefined
     const parsed: unknown = original === undefined ? {} : JSON.parse(original)
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
       throw new Error("Hook configuration must be a JSON object")
@@ -93,30 +77,10 @@ export async function installHooks(options: {
       options.host,
       options.cliPath,
       options.remove,
+      options.nodePath,
     )
-    if (JSON.stringify(parsed) === JSON.stringify(next)) return false
-    if (original !== undefined) {
-      try {
-        await copyFile(options.path, `${options.path}.before-ysk`, constants.COPYFILE_EXCL)
-      } catch (error) {
-        if (!isErrno(error, "EEXIST")) throw error
-      }
-    }
-    const temporary = `${options.path}.${randomUUID()}.tmp`
-    try {
-      const file = await open(temporary, "wx", 0o600)
-      try {
-        await file.writeFile(`${JSON.stringify(next, null, 2)}\n`)
-        await file.sync()
-      } finally {
-        await file.close()
-      }
-      await rename(temporary, options.path)
-    } finally {
-      await rm(temporary, { force: true })
-    }
-    return true
-  } finally {
-    await release()
-  }
+    return JSON.stringify(parsed) === JSON.stringify(next)
+      ? original
+      : `${JSON.stringify(next, null, 2)}\n`
+  })
 }

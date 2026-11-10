@@ -39,39 +39,35 @@ _以上为示例。大多数检查应当保持安静，不产生提示。_
 
 OpenCode Desktop 扩展 API 仍为实验性接口。MCP 集成需要客户端主动提供上下文并调用工具。Claude Code 钩子不会复用 Claude 订阅；请为观察器配置 Codex 登录或 API 提供商。
 
-## 从源码安装
+## 安装
 
-项目目前通过此仓库分发。以下步骤不依赖已发布的 npm 包。
-
-需要 Node.js **22.18+**、npm 和 Git。
+**macOS / Linux**
 
 ```sh
-git clone https://github.com/polanski13/you-should-know.git
-cd you-should-know
-npm ci
-npm run build
-npm link
+curl -fsSL https://github.com/polanski13/you-should-know/releases/latest/download/install.sh | sh
 ```
 
-请保留仓库所在路径：本地插件和已安装的钩子会引用它。更新源码后，再次运行 `npm ci && npm run build`。
+**Windows PowerShell**
+
+```powershell
+irm https://github.com/polanski13/you-should-know/releases/latest/download/install.ps1 | iex
+```
+
+按提示选择编码客户端。安装器下载自带 Node.js 的发行包，验证 SHA-256，并在保留现有设置的同时连接所选客户端。**不需要 Git、npm、源码构建或管理员权限。** 请先安装编码客户端并完成模型提供商的身份验证。
+
+支持 macOS、使用 glibc 的 Linux 和 Windows，均提供 x64 与 ARM64 版本。打开新终端后即可使用 `ysk`。再次运行相同安装命令，会更新之前连接的所有客户端。
+
+macOS/Linux 上可直接指定客户端：
+
+```sh
+curl -fsSL https://github.com/polanski13/you-should-know/releases/latest/download/install.sh | sh -s -- --host opencode,codex
+```
+
+以后可通过 `ysk setup --host claude-code` 添加客户端。自定义路径、无人值守安装和源码安装见[安装指南](docs/zh-CN/guide.md#安装与更新)。
 
 ### OpenCode
 
-将**仓库目录的绝对路径**加入全局 `~/.config/opencode/opencode.json` 或 `.jsonc`。请合并到现有 `plugins` 数组中：
-
-```jsonc
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": [
-    {
-      "package": "/absolute/path/to/you-should-know",
-      "options": { "language": "auto" },
-    },
-  ],
-}
-```
-
-一条配置即可加载服务端、TUI 和 Desktop 部分。Desktop 需要全局配置；项目级配置只加载服务端和 TUI 部分。OpenCode 会自动应用配置变更。
+在安装向导中选择 **OpenCode**。安装器添加全局插件配置，连接服务端、TUI 和 Desktop，并保留 JSONC 注释及现有插件选项。OpenCode 会自动应用配置变更，并使用已连接的模型。
 
 继续正常工作即可。有值得提醒的发现时，会出现提示。展开后可以阅读解释和原文依据。**明白了**和**我已了解**会记住该主题。Desktop 中的**在对话中讨论**会把提示插入输入框，由你决定是否发送；TUI 中选择讨论会直接发送明确的后续消息。
 
@@ -79,13 +75,10 @@ npm link
 
 ```sh
 codex login
-ysk init
 ysk doctor
-ysk install codex
-codex --enable hooks
 ```
 
-安装器会合并 `hooks.json`、保留其他钩子，并备份原文件。后台检查不会阻塞工具执行。同步的 `UserPromptSubmit` 钩子会在下一次提交消息时显示待处理提示。
+在向导中选择 **Codex**。安装器合并 `hooks.json`、备份原文件，并在 Codex CLI 可用时启用钩子。若无法自动启用，请使用 `codex --enable hooks` 启动。后台检查不会阻塞工具执行。同步的 `UserPromptSubmit` 钩子会在下一次提交消息时显示待处理提示。
 
 要实时查看提示，请在另一个终端中，进入**当前工作项目的目录**后运行：
 
@@ -95,33 +88,11 @@ ysk watch
 
 ### Claude Code
 
-需要支持异步命令钩子的 Claude Code 版本。先通过 `ysk init` 配置观察模型，并运行 `ysk doctor` 检查，然后执行：
-
-```sh
-ysk install claude-code
-```
-
-默认使用已登录的 Codex CLI，也可选择 OpenAI 兼容 API 或 Anthropic API。详见[使用指南](docs/zh-CN/guide.md#模型提供商)。
+在向导中选择 **Claude Code**，并使用支持异步命令钩子的版本。向导连接钩子，并帮助选择观察器的提供商：已登录的 Codex CLI、OpenAI 兼容 API 或 Anthropic API。API 提供商需要模型 ID 和客户端环境中的 API 密钥。通过 `ysk doctor` 检查配置，详见[使用指南](docs/zh-CN/guide.md#模型提供商)。
 
 ### MCP
 
-在客户端中添加 stdio 服务。示例采用常见的 `mcpServers` 格式；请按客户端要求调整外层结构：
-
-```json
-{
-  "mcpServers": {
-    "you-should-know": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/you-should-know/dist/cli.js",
-        "mcp",
-        "--cwd",
-        "/absolute/path/to/project"
-      ]
-    }
-  }
-}
-```
+在向导中选择 **Another MCP client**，或运行 `ysk setup --host mcp`。将输出的 `mcpServers` 配置复制到客户端，并把 `/absolute/path/to/project` 替换为工作目录。生成的命令使用内置 Node.js 的绝对路径，因此无需客户端继承终端的 PATH。请按客户端要求调整外层结构，更新后重新粘贴新配置。
 
 工具包括 `ysk_observe`、`ysk_notes`、`ysk_feedback`。提示资源为 `ysk://notes`。反馈必须代表用户明确表达的意见。
 
@@ -138,7 +109,7 @@ ysk resume
 ysk watch
 ```
 
-通过 `ysk uninstall codex` 或 `ysk uninstall claude-code` 移除钩子。删除插件配置项即可断开 OpenCode 集成。卸载会保留已保存的提示和其他设置。
+通过 `ysk uninstall opencode`、`ysk uninstall codex` 或 `ysk uninstall claude-code` 断开客户端，并将其从后续更新列表中移除。已保存的提示和其他设置会被保留；删除安装文件的方法见指南。
 
 ## 默认设置
 

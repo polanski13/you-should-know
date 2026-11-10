@@ -3,6 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { ModelProvider, ModelRequest, ModelResponse } from "../core/types.js"
 import { JsonLineClient, object } from "./json-lines.js"
+import { VERSION } from "../version.js"
 
 const disabledFeatures = [
   "apps",
@@ -68,7 +69,7 @@ export class CodexProvider implements ModelProvider {
         },
       )
       await client.request("initialize", {
-        clientInfo: { name: "you_should_know", title: "You Should Know", version: "0.1.0" },
+        clientInfo: { name: "you_should_know", title: "You Should Know", version: VERSION },
         capabilities: { experimentalApi: true },
       })
       client.notify("initialized")

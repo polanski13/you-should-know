@@ -12,14 +12,16 @@ import type { Note } from "./core/types.js"
 import { createRuntime } from "./runtime.js"
 import { handleHook } from "./adapters/hooks.js"
 import { hookConfigPath, installHooks } from "./adapters/install.js"
+import { VERSION } from "./version.js"
 
 const help = `You Should Know · a quiet second opinion for your coding agent
 
 Usage: ysk <command> [options]
 
+  setup                        Connect your coding agent (interactive or --host)
   init                         Create your user configuration
-  install codex|claude-code     Add background observation hooks
-  uninstall codex|claude-code   Remove only this project's hook registrations
+  install <host>               Connect opencode, codex, or claude-code
+  uninstall <host>             Disconnect opencode, codex, or claude-code
   check                        Read an observation as JSON from stdin
   notes                        List this project's saved notes
   show <id>                    Read a note and its evidence
@@ -33,6 +35,10 @@ Options:
   --cwd <directory>            Project directory (default: current directory)
   --config <path>              User configuration file
   --session <id>               Filter notes by session
+  --host <client>              opencode, codex, claude-code, or mcp; comma-separated
+  --provider <provider>        Observer provider for first-time setup
+  --model <id>                 API model for first-time setup
+  --no-path                    Leave shell/PATH configuration to you
   --json                       Machine-readable output
   --manual                     Check now, while retaining budget and deduplication limits
   --help                       Show this help
@@ -75,6 +81,10 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       config: { type: "string" },
       session: { type: "string" },
       host: { type: "string" },
+      provider: { type: "string" },
+      model: { type: "string" },
+      "install-root": { type: "string" },
+      "no-path": { type: "boolean" },
       json: { type: "boolean" },
       manual: { type: "boolean" },
       help: { type: "boolean" },
@@ -84,7 +94,7 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   })
   const [command, first, second] = positionals
   if (values.version) {
-    console.log("0.1.0")
+    console.log(VERSION)
     return
   }
   if (values.help || !command || command === "help") {
@@ -106,6 +116,18 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   }
   const workspace = resolve(values.cwd ?? process.cwd())
   const print = (value: unknown) => console.log(JSON.stringify(value, null, 2))
+  if (command === "setup") {
+    const { setup } = await import("./setup/index.js")
+    await setup({
+      cliPath: fileURLToPath(import.meta.url),
+      host: values.host ?? first,
+      root: values["install-root"],
+      noPath: values["no-path"],
+      provider: values.provider,
+      model: values.model,
+    })
+    return
+  }
   if (command === "init") {
     const path = values.config ?? join(configDirectory(), "config.json")
     await mkdir(dirname(path), { recursive: true, mode: 0o700 })
@@ -124,8 +146,23 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
     return
   }
   if (command === "install" || command === "uninstall") {
+    if (first === "opencode") {
+      const { configureTarget, packageDirectory, forgetTarget } = await import("./setup/index.js")
+      const cliPath = fileURLToPath(import.meta.url)
+      console.log(
+        await configureTarget("opencode", {
+          cliPath,
+          packagePath: await packageDirectory(cliPath),
+          remove: command === "uninstall",
+        }),
+      )
+      if (command === "uninstall") await forgetTarget(cliPath, "opencode")
+      return
+    }
     if (first !== "codex" && first !== "claude-code")
-      throw new Error("Choose codex or claude-code. See the README for OpenCode and MCP setup.")
+      throw new Error(
+        "Choose opencode, codex, or claude-code. Run ysk setup for guided installation.",
+      )
     const path = hookConfigPath(first)
     const changed = await installHooks({
       host: first,
@@ -134,6 +171,10 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
       remove: command === "uninstall",
     })
     console.log(`${changed ? "Updated" : "Already up to date"}: ${path}`)
+    if (command === "uninstall") {
+      const { forgetTarget } = await import("./setup/index.js")
+      await forgetTarget(fileURLToPath(import.meta.url), first)
+    }
     if (command === "install") {
       console.log(
         "Background checks save notes locally. Notes appear on your next prompt; use ysk watch for a live feed.",

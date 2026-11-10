@@ -1,6 +1,23 @@
 # Changelog
 
-## Unreleased — 0.1.0
+## 0.2.0 — 2026-11-11
+
+### Added
+
+- One-command macOS/Linux and Windows installers with a bundled Node.js runtime; Git, npm, and administrator rights are not required.
+- Interactive `ysk setup`, explicit multi-client selection, automatic OpenCode registration, and Codex hook enablement.
+- Versioned installations, SHA-256 verification, per-user launchers, PATH setup, and saved client selections for updates.
+- Standalone GitHub Release archives for macOS, Linux/glibc, and Windows on x64 and ARM64, with runtime and third-party license notices.
+- Cross-platform installer smoke tests and a tag-triggered release workflow.
+
+### Changed
+
+- Hook commands use absolute runtime paths, so a separate Node.js installation is unnecessary.
+- OpenCode setup preserves JSONC comments, existing settings, and observer options when moving from a source checkout or an older release.
+- Disconnecting a client removes it from the saved update targets while keeping notes and unrelated settings.
+- English, Russian, and Simplified Chinese documentation now leads with one-command installation.
+
+## 0.1.0 — 2026-11-10 (source preview)
 
 ### Added
 

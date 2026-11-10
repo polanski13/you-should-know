@@ -3,9 +3,10 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
 import { feedbackSchema, messageSchema } from "../core/types.js"
 import type { Runtime } from "../runtime.js"
+import { VERSION } from "../version.js"
 
 export function createMcpServer(runtime: Runtime): McpServer {
-  const server = new McpServer({ name: "you-should-know", version: "0.1.0" })
+  const server = new McpServer({ name: "you-should-know", version: VERSION })
   const output = (value: unknown) => ({
     content: [{ type: "text" as const, text: JSON.stringify(value) }],
   })

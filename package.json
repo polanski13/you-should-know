@@ -1,6 +1,6 @@
 {
   "name": "@polanski13/you-should-know",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A quiet second opinion for your coding agent. Context-aware notes for OpenCode, Codex, Claude Code, and MCP clients.",
   "type": "module",
   "license": "MIT",
@@ -54,6 +54,8 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
     "test:package": "node scripts/smoke-package.mjs",
+    "build:release": "npm run build && node scripts/build-release.mjs",
+    "test:release": "node scripts/smoke-release.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run typecheck && npm test && npm run build && npm run format:check",
@@ -61,6 +63,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "jsonc-parser": "^3.3.1",
     "proper-lockfile": "^4.1.2",
     "zod": "^4.6.7"
   },
@@ -68,6 +71,7 @@
     "@opencode/plugin": "~2.2.6",
     "@types/node": "^22.0.0",
     "@types/proper-lockfile": "^4.1.4",
+    "esbuild": "^0.28.2",
     "prettier": "^3.9.10",
     "solid-js": "^1.9.18",
     "tsx": "^4.23.15",

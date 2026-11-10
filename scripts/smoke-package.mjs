@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const project = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+const { version } = JSON.parse(await readFile(join(project, "package.json"), "utf8"))
 const temporary = await mkdtemp(join(tmpdir(), "ysk-package-"))
 const npm = process.platform === "win32" ? "npm.cmd" : "npm"
 const run = (command, args, cwd = temporary, env = process.env) =>
@@ -59,7 +60,7 @@ try {
       timeout: 15_000,
       shell: process.platform === "win32",
     })
-  assert.equal(cli(["--version"]).trim(), "0.1.0")
+  assert.equal(cli(["--version"]).trim(), version)
   assert.deepEqual(JSON.parse(cli(["notes", "--json"])), [])
   assert.equal(cli(["hook", "--host", "codex"], "invalid JSON").trim(), "{}")
   const imports = run(

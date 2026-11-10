@@ -40,39 +40,35 @@ _Illustrative example. Most checks should produce no note._
 
 OpenCode's Desktop extension API is experimental. MCP is an on-demand integration: the client must supply context and call the tool. Claude Code hooks do not reuse a Claude subscription; choose Codex authentication or an API provider for the observer.
 
-## Install from source
+## Install
 
-The project is currently distributed from this repository. **No npm release is required for these instructions.**
-
-You need Node.js **22.18+**, npm, and Git.
+**macOS / Linux**
 
 ```sh
-git clone https://github.com/polanski13/you-should-know.git
-cd you-should-know
-npm ci
-npm run build
-npm link
+curl -fsSL https://github.com/polanski13/you-should-know/releases/latest/download/install.sh | sh
 ```
 
-Keep the checkout in place: local plugins and installed hooks refer to it. After updating the source, run `npm ci && npm run build` again.
+**Windows PowerShell**
+
+```powershell
+irm https://github.com/polanski13/you-should-know/releases/latest/download/install.ps1 | iex
+```
+
+Choose your coding client when prompted. The installer downloads a release with its own Node.js runtime, verifies SHA-256, and connects the selected clients while preserving existing settings. **No Git, npm, source build, or administrator rights required.** Your coding client and model authentication must already be set up.
+
+Supports macOS, Linux with glibc, and Windows on x64 and ARM64. Open a new terminal to use `ysk`. Run the same installation command again to update all previously connected clients.
+
+To select clients directly on macOS/Linux:
+
+```sh
+curl -fsSL https://github.com/polanski13/you-should-know/releases/latest/download/install.sh | sh -s -- --host opencode,codex
+```
+
+Add another client later with `ysk setup --host claude-code`. See the [installation guide](docs/en/guide.md#installation-and-updates) for custom paths, unattended setup, and source installation.
 
 ### OpenCode
 
-Add the **absolute path to the repository directory** to your global `~/.config/opencode/opencode.json` or `.jsonc`. Merge with your existing `plugins` array.
-
-```jsonc
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": [
-    {
-      "package": "/absolute/path/to/you-should-know",
-      "options": { "language": "auto" },
-    },
-  ],
-}
-```
-
-One entry loads the server, TUI, and Desktop parts. Desktop requires the global entry; project-local configuration loads the server/TUI parts. OpenCode reloads configuration automatically.
+Select **OpenCode** during setup. The installer adds a global plugin entry for the server, TUI, and Desktop, preserving JSONC comments and existing plugin options. OpenCode reloads configuration automatically and uses its existing model connection.
 
 Continue working normally. A note appears when a check finds something worth surfacing. Expand the pill to read the explanation and evidence. **Understood** and **I knew this** remember the topic; **Discuss in chat** puts the note in the Desktop composer for you to send. In the TUI, selecting Discuss sends an explicit follow-up.
 
@@ -80,13 +76,10 @@ Continue working normally. A note appears when a check finds something worth sur
 
 ```sh
 codex login
-ysk init
 ysk doctor
-ysk install codex
-codex --enable hooks
 ```
 
-The installer merges `hooks.json`, preserves unrelated hooks, and backs up the original file. Background hooks save notes without blocking tool execution. A synchronous `UserPromptSubmit` hook delivers a pending note on your next prompt.
+Select **Codex** during setup. The installer merges `hooks.json`, backs up the original file, and enables Codex hooks when its CLI is available. If automatic enablement is unavailable, start with `codex --enable hooks`. Background hooks save notes without blocking tool execution. A synchronous `UserPromptSubmit` hook delivers a pending note on your next prompt.
 
 For immediate visibility, run this in another terminal **inside the project you are working on**:
 
@@ -96,33 +89,11 @@ ysk watch
 
 ### Claude Code
 
-Use a Claude Code version supporting asynchronous command hooks. First configure the observer provider with `ysk init` and check it with `ysk doctor`, then:
-
-```sh
-ysk install claude-code
-```
-
-The default provider is your signed-in Codex CLI. You can instead select an OpenAI-compatible or Anthropic API provider in the [guide](docs/en/guide.md#providers).
+Select **Claude Code** during setup. Use a version supporting asynchronous command hooks. Setup connects the hooks and helps choose the observer provider: a signed-in Codex CLI, an OpenAI-compatible API, or the Anthropic API. API providers require a model ID and an API key in the client's environment. Check the provider with `ysk doctor`; see the [guide](docs/en/guide.md#providers) for details.
 
 ### MCP
 
-Add a stdio server to your client's configuration. This example uses the common `mcpServers` format; adapt the wrapper to your client:
-
-```json
-{
-  "mcpServers": {
-    "you-should-know": {
-      "command": "node",
-      "args": [
-        "/absolute/path/to/you-should-know/dist/cli.js",
-        "mcp",
-        "--cwd",
-        "/absolute/path/to/project"
-      ]
-    }
-  }
-}
-```
+Select **Another MCP client** during setup, or run `ysk setup --host mcp`. Copy the printed `mcpServers` configuration into your client and replace `/absolute/path/to/project` with your workspace. The generated command uses the bundled runtime's absolute path, so it also works in clients that do not inherit your shell PATH. Adapt the outer configuration structure to your client, and paste the new configuration again after updating.
 
 Available tools: `ysk_observe`, `ysk_notes`, `ysk_feedback`. Saved notes are also available at `ysk://notes`. Feedback should represent the person's explicit response.
 
@@ -139,7 +110,7 @@ ysk resume
 ysk watch
 ```
 
-Remove hook registrations with `ysk uninstall codex` or `ysk uninstall claude-code`. Remove the plugin entry to disconnect OpenCode. Uninstalling preserves saved notes and unrelated settings.
+Disconnect a client with `ysk uninstall opencode`, `ysk uninstall codex`, or `ysk uninstall claude-code`. This also removes it from the saved update targets. Saved notes and unrelated settings are preserved; see the guide to remove the installed files.
 
 ## Sensible defaults
 

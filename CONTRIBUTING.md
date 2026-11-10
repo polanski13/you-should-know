@@ -12,9 +12,13 @@ Use Node.js 22.18 or newer and npm. Clone the repository, then run:
 npm ci
 npm run check
 npm run test:package
+npm run build:release
+npm run test:release
 ```
 
 `check` runs strict TypeScript checking, tests, both builds, and formatting verification. Use `npm run format` to format changes. Tests use synthetic input and local fixtures; they need no account or API key. `test:package` needs registry access to install production dependencies in a temporary directory. It does not contact a model.
+
+`build:release` bundles the application without external Node package dependencies. `test:release` downloads the official Node runtime, serves a local release fixture, and runs the real installer in an isolated home. It checks checksum rejection, installation, upgrades, launchers, native exports, and MCP. It needs access to nodejs.org but does not contact a model or change your client settings.
 
 ## Project layout
 
@@ -24,9 +28,12 @@ npm run test:package
 | `src/providers`             | Codex app-server and HTTP transports                                         |
 | `src/opencode`              | Server hooks, portable RPC contract, Desktop and TUI                         |
 | `src/adapters`              | Transcript normalization, lifecycle hooks, hook installer, MCP               |
+| `src/setup`                 | Setup wizard, JSONC registration, launchers, PATH and installation receipts  |
 | `src/cli.ts`                | User-facing commands and fail-open hook entrypoint                           |
 | `test`                      | Deterministic unit and integration tests                                     |
 | `scripts/smoke-package.mjs` | Production-only tarball installation smoke test                              |
+| `scripts/build-release.mjs` | Standalone bundle, platform archives and checksums                           |
+| `scripts/smoke-release.mjs` | Bundled-runtime installer smoke test                                         |
 | `integrations`              | Copyable configuration and observation examples                              |
 
 The core does not import host SDKs. Providers implement `ModelProvider`; stores implement `StateStore`. OpenCode's SDK is a development dependency: the Node adapters use type-only imports and its Desktop bundle resolves shared UI modules through the host. Keep those boundaries intact.
@@ -47,13 +54,14 @@ Bug reports should include the host/version, operating system, Node version, obs
 
 ## Release preparation
 
-1. Update the version and changelog; synchronize the lockfile.
-2. Run `npm run check` and `npm run test:package` from a clean checkout.
+1. Update `package.json`, `src/version.ts`, both installers, the changelog, and `docs/en/release-notes.md`; synchronize the lockfile.
+2. Run `npm run check`, `npm run test:package`, `npm run build:release`, and `npm run test:release` from a clean checkout.
 3. Inspect `npm pack --dry-run` and `npm audit --omit=dev`.
 4. Smoke-test native OpenCode loading and a Codex request with synthetic input.
-5. Publish only after the maintainer explicitly decides to release. The repository currently documents source installation; do not replace it with a package-install command before a package is available.
+5. Build all six archives with `npm run build:release -- --archives` (or select one with `--platform linux-x64`). Check that bundled Node and third-party license notices are present.
+6. Push a version tag such as `v0.2.0` to publish a GitHub Release. The release workflow first runs Linux, macOS, and Windows checks, then publishes the installers, platform archives, and `SHA256SUMS`. Verify the public installer in an isolated home after publication.
 
-The OpenCode build SDK brings a larger development-only dependency graph. Production auditing and isolated installation are separate checks so SDK tooling does not become a runtime dependency accidentally. CI does not run authenticated model checks or automatically publish packages.
+The OpenCode build SDK brings a larger development-only dependency graph. Production auditing and isolated installation are separate checks so SDK tooling does not become a runtime dependency accidentally. CI does not run authenticated model checks. Version tags publish GitHub Releases; npm publication is not required. The official Node version is pinned in `scripts/runtime.mjs`, and its downloaded archives are verified against Node's published SHA-256 checksums.
 
 As of November 10, 2026, the full development audit reports moderate advisories in the SDK's transitive `glob` and `minimatch` dependencies ([GHSA-3g3m-2fjr-6pw4](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4), [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249)). The SDK still pins affected major versions; these packages are absent from the production install. Recheck upstream SDK updates rather than forcing incompatible major overrides to silence the audit.
 
