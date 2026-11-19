@@ -91,6 +91,7 @@ export function parseTranscript(text: string): Transcript {
   for (const line of text.split("\n")) {
     const event = decode(line, offset)
     if (event) {
+      if (event.turnId !== undefined && event.turnId !== position.turnId) messages.length = 0
       advance(position, event)
       if (event.message) messages.push(event.message)
     } else {
@@ -181,6 +182,7 @@ export async function readTranscript(
         messages.length = 0
       } else {
         if (event.turnId !== undefined && event.turnId !== position.turnId) {
+          messages.length = 0
           latestUser = undefined
           promptId = undefined
         }

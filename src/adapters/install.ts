@@ -47,7 +47,7 @@ export function mergeHooks(
       const handler: Record<string, unknown> = {
         type: "command",
         command: `${shellQuote(nodePath.replaceAll("\\", "/"))} ${shellQuote(cliPath.replaceAll("\\", "/"))} hook --host ${host} ${marker}`,
-        timeout: async ? 190 : 10,
+        timeout: host === "claude-code" && event === "Stop" ? 375 : async ? 190 : 10,
         ...(async ? { async: true } : {}),
       }
       if (host === "codex")

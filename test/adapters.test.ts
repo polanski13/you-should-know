@@ -246,9 +246,8 @@ test("late hook processes cannot spend quota or expire another prompt's note", a
               ]
         await writeFile(join(root, id), rows.map((row) => JSON.stringify(row)).join("\n"))
       }
-      const stop = (id: string, session_id = event.session_id) => ({
+      const stop = (id: string) => ({
         ...event,
-        session_id,
         hook_event_name: "Stop",
         [promptField]: id,
         transcript_path: join(root, id),
@@ -259,15 +258,17 @@ test("late hook processes cannot spend quota or expire another prompt's note", a
       )
       await handleHook(stop("old"), { host, runtime: delayed })
       assert.equal(calls, 0)
+      assert.equal(await current.store.transact((state) => state.checks.length), 0)
       await handleHook(stop("new"), { host, runtime: current })
       assert.equal(calls, 1)
       await handleHook(stop("old"), { host, runtime: delayed })
       assert.equal((await current.observer.notes())[0]?.status, "unread")
       await handleHook(
-        { ...event, session_id: "ended", hook_event_name: "SessionEnd" },
+        { ...event, hook_event_name: "UserPromptSubmit", [promptField]: "old" },
         { host, runtime: current },
       )
-      await handleHook(stop("old", "ended"), { host, runtime: delayed })
+      await handleHook({ ...event, hook_event_name: "SessionEnd" }, { host, runtime: current })
+      await handleHook(stop("old"), { host, runtime: delayed })
       assert.equal(calls, 1)
     }
   } finally {

@@ -45,6 +45,8 @@ function sessionFor(
     }
     session.turnId = input.turnId
     session.lastCadenceStep = undefined
+    session.checkedThisTurn = undefined
+    session.checkedFinal = undefined
     session.noteId = undefined
     session.lease = undefined
   }
@@ -133,7 +135,12 @@ export class Observer {
     raw: Observation,
     provider: ModelProvider,
     manual = false,
-    hook?: { promptId?: string; cursor?: TranscriptCursor; previousFingerprint?: string },
+    hook?: {
+      promptId?: string
+      cursor?: TranscriptCursor
+      previousFingerprint?: string
+      finalReply?: boolean
+    },
   ): Promise<ObservationResult> {
     if (this.closed) return { status: "skipped", reason: "disposed" }
     const input = observationSchema.parse(raw)
@@ -163,6 +170,7 @@ export class Observer {
       if (hook?.cursor) session.transcript = hook.cursor
       if (messages.length < 2) return skip("insufficient_context")
       if (!this.config.enabled || state.paused) return skip("paused")
+      if (hook?.finalReply && session.checkedFinal) return skip("unchanged")
       if (session.lease && session.lease.until > now) return skip("in_flight")
       if (session.offeredTurn === input.turnId) return skip("already_offered")
       if (session.revision === revision && !(manual && session.lastCheckFailed))
@@ -173,15 +181,20 @@ export class Observer {
       )
         return skip("budget")
       const windowStart = input.step - (input.step % this.config.minSteps)
-      if (!manual && windowStart <= (session.lastCadenceStep ?? 0)) return skip("cadence")
-      if (!manual && session.checks > 0 && now - session.lastCheckAt < this.config.minIntervalMs)
+      const followUp =
+        hook?.finalReply && session.checkedThisTurn && input.step >= this.config.minSteps
+      const scheduled = !manual && !followUp
+      if (scheduled && windowStart <= (session.lastCadenceStep ?? 0)) return skip("cadence")
+      if (scheduled && session.checks > 0 && now - session.lastCheckAt < this.config.minIntervalMs)
         return skip("cooldown")
       session.lastCadenceStep = Math.max(session.lastCadenceStep ?? 0, input.step)
-      if (!manual && session.skip > 0) {
+      if (scheduled && session.skip > 0) {
         session.skip--
         return skip("backoff")
       }
       session.lease = { id: lease, until: now + this.config.timeoutMs + 5_000 }
+      session.checkedThisTurn = true
+      if (hook?.finalReply) session.checkedFinal = true
       session.revision = revision
       session.lastCheckFailed = undefined
       session.lastCheckAt = now

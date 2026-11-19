@@ -3,11 +3,11 @@ import { appendFile, mkdtemp, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import { readTranscript } from "../src/adapters/transcript.js"
+import { parseTranscript, readTranscript } from "../src/adapters/transcript.js"
 import { handleHook } from "../src/adapters/hooks.js"
 import { createRuntime } from "../src/runtime.js"
 import { digest } from "../src/core/context.js"
-import { provider } from "./helpers.js"
+import { deferred, provider } from "./helpers.js"
 
 const line = (value: unknown) => JSON.stringify(value) + "\n"
 const user = (id: string, text: string) =>
@@ -133,6 +133,22 @@ test("a new turn marker without its user message never borrows an earlier goal",
   const batch = await readTranscript(path)
   assert.equal(batch.turnId, "new")
   assert.deepEqual(batch.messages, [])
+  const current = line({
+    type: "response_item",
+    payload: { role: "user", content: "current goal" },
+  })
+  await appendFile(path, current)
+  const continued = await readTranscript(path, batch.cursor)
+  assert.deepEqual(
+    continued.messages.map((m) => m.text),
+    ["current goal"],
+  )
+  assert.deepEqual(
+    parseTranscript(
+      user("old", "old goal") + tool("t", "old evidence") + user("new", "current goal"),
+    ).messages.map((m) => m.text),
+    ["current goal"],
+  )
 })
 test("a native Stop payload supplies the final text once for its own prompt", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "ysk-native-stop-"))
@@ -165,6 +181,11 @@ test("a native Stop payload supplies the final text once for its own prompt", as
   })
   await appendFile(path, tool("t2", "One more test") + flushed)
   await handleHook(stop, options)
+  assert.equal(captured.length, 1)
+  const next = { ...event, prompt_id: "q" }
+  await handleHook({ ...next, hook_event_name: "UserPromptSubmit" }, options)
+  await appendFile(path, goal("q") + tool("t3", "New test") + flushed)
+  await handleHook({ ...stop, prompt_id: "q" }, options)
   assert.equal(captured.length, 2)
   assert.equal(captured[1]!.split(stop.last_assistant_message).length - 1, 1)
 })
@@ -247,4 +268,62 @@ test("malformed complete records fence off their unknown turn and invalid hook I
     await runtime.store.transact((s) => s.sessions[digest("s")]?.activeHookPrompt),
     "valid",
   )
+})
+test("a native final reply waits for an active tool check and spends at most one extra check", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "ysk-final-lease-"))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const path = join(dir, "chat.jsonl"),
+    cfg = join(dir, "config.json")
+  await writeFile(
+    cfg,
+    JSON.stringify({ observer: { minSteps: 2, minIntervalMs: 60_000, maxChecksPerSession: 2 } }),
+  )
+  await writeFile(
+    path,
+    line({ uuid: "user", promptId: "p", message: { role: "user", content: "Check both jobs" } }) +
+      tool("a", "First failed") +
+      tool("b", "Second failed"),
+  )
+  const env = { YSK_DATA_DIR: join(dir, "state") }
+  const [toolHost, finalHost] = await Promise.all([
+    createRuntime(dir, cfg, env),
+    createRuntime(dir, cfg, env),
+  ])
+  const firstStarted = deferred<void>(),
+    finishTool = deferred<void>(),
+    finalWaiting = deferred<void>()
+  toolHost.provider = {
+    name: "fixture",
+    complete: async () => {
+      firstStarted.resolve()
+      await finishTool.promise
+      return { text: '{"note":null}' }
+    },
+  }
+  const stopObserve = finalHost.observer.observe.bind(finalHost.observer)
+  finalHost.observer.observe = async (...args) => {
+    const r = await stopObserve(...args)
+    if (r.status === "skipped" && r.reason === "in_flight") finalWaiting.resolve()
+    return r
+  }
+  const seen: string[] = []
+  finalHost.provider = provider(null, (req) => seen.push(req.prompt))
+  const event = { cwd: dir, session_id: "s", prompt_id: "p", transcript_path: path }
+  const opts = { host: "claude-code" as const, runtime: finalHost }
+  await handleHook({ ...event, hook_event_name: "UserPromptSubmit" }, opts)
+  const running = handleHook(
+    { ...event, hook_event_name: "PostToolUse" },
+    { ...opts, runtime: toolHost },
+  )
+  await firstStarted.promise
+  const stop = { ...event, hook_event_name: "Stop", last_assistant_message: "Both jobs passed." }
+  const pending = handleHook(stop, opts)
+  await finalWaiting.promise
+  assert.equal(seen.length, 0)
+  finishTool.resolve()
+  await Promise.all([running, pending])
+  await handleHook(stop, opts)
+  assert.equal(seen.length, 1)
+  assert.match(seen[0]!, /Both jobs passed\./)
+  assert.equal(await finalHost.store.transact((s) => s.checks.length), 2)
 })
