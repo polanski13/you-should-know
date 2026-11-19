@@ -195,6 +195,7 @@ export class Observer {
           known: reservation.known,
           recent: reservation.recent,
           language: this.config.language,
+          nativeOutputSchemaOnly: provider.nativeOutputSchemaOnly,
         }),
         schema: modelResponseSchema,
         signal,

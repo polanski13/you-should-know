@@ -128,6 +128,8 @@ For each check, the provider starts `codex app-server --stdio` in a temporary em
 
 Your configured Codex account/provider supplies the quota. The app-server API is version-sensitive. A successful `ysk doctor` checks the installed version, not a real inference; inspect authentication with `codex login status`.
 
+For a Codex-only experiment, set `YSK_CODEX_NATIVE_SCHEMA_ONLY=1` in the host environment. The schema travels in the native `outputSchema` field and the prompt omits its duplicate text. Unset the variable to restore the default prompt.
+
 ### OpenAI-compatible API
 
 ```json

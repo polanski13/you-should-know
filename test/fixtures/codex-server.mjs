@@ -34,6 +34,14 @@ for await (const line of lines) {
     })
   }
   if (message.method === "turn/start") {
+    if (mode === "schema-default" || mode === "schema-native") {
+      const schema = message.params.outputSchema
+      const inText = message.params.input[0].text.includes("\n\nResponse schema:\n")
+      if (!schema?.properties?.note || inText !== (mode === "schema-default")) {
+        send({ id: message.id, error: { code: -32602 } })
+        continue
+      }
+    }
     send({ id: message.id, result: { turn: { id: "turn" } } })
     if (mode === "hang") continue
     if (mode === "usage") {

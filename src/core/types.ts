@@ -84,6 +84,7 @@ export interface ModelUsage {
 export interface ModelProvider {
   readonly name: string
   readonly model?: string
+  readonly nativeOutputSchemaOnly?: boolean
   complete(request: ModelRequest): Promise<ModelResponse>
 }
 

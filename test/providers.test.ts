@@ -9,6 +9,8 @@ import { HttpProvider } from "../src/providers/http.js"
 import { providerConfigSchema } from "../src/core/config.js"
 import { modelResponseSchema } from "../src/core/prompt.js"
 import type { ModelRequest } from "../src/core/types.js"
+import { Observer } from "../src/core/observer.js"
+import { config, MemoryStore, observation } from "./helpers.js"
 
 const request = (): ModelRequest => ({
   system: "Return JSON only.",
@@ -18,6 +20,24 @@ const request = (): ModelRequest => ({
   maxOutputTokens: 1_200,
 })
 const fixture = fileURLToPath(new URL("./fixtures/codex-server.mjs", import.meta.url))
+
+test("the optional native-only schema is scoped to Codex and preserves structured output", async () => {
+  for (const enabled of [false, true]) {
+    const provider = new CodexProvider({
+      executable: process.execPath,
+      args: [fixture],
+      env: {
+        MOCK_CODEX_MODE: enabled ? "schema-native" : "schema-default",
+        YSK_CODEX_NATIVE_SCHEMA_ONLY: enabled ? "1" : "0",
+      },
+    })
+    const observer = new Observer(new MemoryStore(), config)
+    assert.deepEqual(await observer.observe(observation, provider), {
+      status: "quiet",
+      reason: "no_finding",
+    })
+  }
+})
 
 test("Codex speaks the real JSON-lines protocol with an isolated, tool-free thread", async () => {
   const provider = new CodexProvider({ executable: process.execPath, args: [fixture] })

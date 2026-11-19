@@ -46,6 +46,9 @@ export function observerCodexConfig(mcpNames: string[]): Record<string, unknown>
 
 export class CodexProvider implements ModelProvider {
   readonly name = "codex"
+  get nativeOutputSchemaOnly(): boolean {
+    return (this.options.env ?? process.env).YSK_CODEX_NATIVE_SCHEMA_ONLY === "1"
+  }
   get model(): string | undefined {
     return this.options.model
   }
