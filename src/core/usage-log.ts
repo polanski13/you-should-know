@@ -1,4 +1,4 @@
-import { appendFile } from "node:fs/promises"
+import { open } from "node:fs/promises"
 import { digest } from "./context.js"
 import type { ModelUsage, Observation } from "./types.js"
 
@@ -22,6 +22,12 @@ export function localUsageLog(path: string | undefined, workspace: string): Usag
   const project = digest(workspace)
   return async ({ sessionId, turnId, ...event }) => {
     const row = { ...event, project, session: digest(sessionId), turn: digest(turnId) }
-    await appendFile(path, JSON.stringify(row) + "\n", { mode: 0o600 })
+    const file = await open(path, "a", 0o600)
+    try {
+      if (process.platform !== "win32" && (await file.stat()).mode & 0o077) await file.chmod(0o600)
+      await file.appendFile(JSON.stringify(row) + "\n")
+    } finally {
+      await file.close()
+    }
   }
 }

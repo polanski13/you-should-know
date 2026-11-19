@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createRuntime } from "../src/runtime.js"
@@ -10,6 +10,8 @@ test("local usage logging groups attempts, omits message text and distinguishes 
   const root = await mkdtemp(join(tmpdir(), "ysk-usage-"))
   try {
     const path = join(root, "usage.jsonl")
+    await writeFile(path, "")
+    if (process.platform !== "win32") await chmod(path, 0o644)
     const env = { YSK_USAGE_LOG: path, YSK_DATA_DIR: join(root, "state"), XDG_CONFIG_HOME: root }
     const { observer } = await createRuntime(root, undefined, env)
     await observer.observe({ ...observation, step: 1 }, provider())
@@ -36,6 +38,7 @@ test("local usage logging groups attempts, omits message text and distinguishes 
       true,
     )
     const content = await readFile(path, "utf8")
+    if (process.platform !== "win32") assert.equal((await stat(path)).mode & 0o777, 0o600)
     const [first, second, ...rest] = content
       .trim()
       .split("\n")
