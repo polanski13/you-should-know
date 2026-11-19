@@ -9,6 +9,7 @@ import { noteSchema } from "./types.js"
 
 const sessionSchema = z.object({
   turnId: z.string(),
+  activeHookPrompt: z.string().nullable().optional(),
   touchedAt: z.number(),
   checks: z.number().int().nonnegative().default(0),
   lastCheckAt: z.number().default(0),

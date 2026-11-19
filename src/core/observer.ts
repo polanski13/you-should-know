@@ -73,20 +73,29 @@ export class Observer {
     private readonly recordUsage?: UsageSink,
   ) {}
 
-  async beginTurn(sessionId: string, turnId: string): Promise<void> {
+  private activateTurn(sessionId: string, turnId: string): void {
     this.turns.set(sessionId, turnId)
     const current = this.running.get(sessionId)
     if (current && current.turnId !== turnId) current.controller.abort()
+  }
+
+  async beginTurn(sessionId: string, turnId: string): Promise<void> {
+    this.activateTurn(sessionId, turnId)
     await this.store.transact((state) => {
       sessionFor(state, { sessionId, turnId }, this.now())
     })
   }
 
-  async invalidate(sessionId: string): Promise<void> {
+  async invalidate(sessionId: string, activeHookPrompt?: string | null): Promise<void> {
     this.running.get(sessionId)?.controller.abort()
     await this.store.transact((state) => {
-      const session = state.sessions[digest(sessionId)]
-      if (session) session.lease = undefined
+      const now = this.now()
+      prune(state, now, this.config.retentionDays)
+      const session =
+        state.sessions[digest(sessionId)] ?? sessionFor(state, { sessionId, turnId: "" }, now)
+      session.lease = undefined
+      session.activeHookPrompt = activeHookPrompt
+      session.touchedAt = now
     })
   }
 
@@ -110,24 +119,26 @@ export class Observer {
     raw: Observation,
     provider: ModelProvider,
     manual = false,
+    hook?: { promptId?: string },
   ): Promise<ObservationResult> {
     if (this.closed) return { status: "skipped", reason: "disposed" }
     const input = observationSchema.parse(raw)
-    this.turns.set(input.sessionId, input.turnId)
-    const current = this.running.get(input.sessionId)
-    if (current && current.turnId !== input.turnId) current.controller.abort()
+    if (!hook) this.activateTurn(input.sessionId, input.turnId)
     const messages = prepareContext(input.messages, this.config)
-    if (messages.length < 2) {
-      await this.beginTurn(input.sessionId, input.turnId)
-      return { status: "skipped", reason: "insufficient_context" }
-    }
     const revision = digest(JSON.stringify(messages))
     const lease = randomUUID()
     const reservation = await this.store.transact((state) => {
       const now = this.now()
       prune(state, now, this.config.retentionDays)
-      const session = sessionFor(state, input, now)
       const skip = (reason: string) => ({ status: "skipped", reason }) as const
+      if (hook) {
+        const active = state.sessions[digest(input.sessionId)]?.activeHookPrompt
+        // null marks SessionEnd. Undefined also supports hosts without prompt IDs.
+        if (active !== undefined && active !== hook.promptId) return skip("stale")
+        this.activateTurn(input.sessionId, input.turnId)
+      }
+      const session = sessionFor(state, input, now)
+      if (messages.length < 2) return skip("insufficient_context")
       if (!this.config.enabled || state.paused) return skip("paused")
       if (session.lease && session.lease.until > now) return skip("in_flight")
       if (session.offeredTurn === input.turnId) return skip("already_offered")

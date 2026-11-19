@@ -10,6 +10,7 @@ const inputSchema = z.object({
   hook_event_name: z.string(),
   transcript_path: z.string().nullish(),
   turn_id: z.string().optional(),
+  prompt_id: z.string().min(1).max(240).optional(),
   stop_hook_active: z.boolean().optional(),
   agent_id: z.string().optional(),
 })
@@ -29,8 +30,9 @@ export async function handleHook(
   const input = parsed.data
   if (input.stop_hook_active || input.agent_id) return {}
   const runtime = options.runtime ?? (await createRuntime(input.cwd, undefined, env))
+  const promptId = options.host === "codex" ? input.turn_id : input.prompt_id
   if (input.hook_event_name === "UserPromptSubmit") {
-    await runtime.observer.invalidate(input.session_id)
+    await runtime.observer.invalidate(input.session_id, promptId)
     const notes = await runtime.observer.notifications(input.session_id)
     if (!notes.length) return {}
     const note = notes[0]!
@@ -41,7 +43,7 @@ export async function handleHook(
     }
   }
   if (input.hook_event_name === "SessionEnd") {
-    await runtime.observer.invalidate(input.session_id)
+    await runtime.observer.invalidate(input.session_id, null)
     return {}
   }
   if (!new Set(["PostToolUse", "Stop"]).has(input.hook_event_name) || !input.transcript_path)
@@ -65,6 +67,8 @@ export async function handleHook(
       messages: transcript.messages,
     },
     runtime.provider,
+    false,
+    { promptId },
   )
   return {}
 }

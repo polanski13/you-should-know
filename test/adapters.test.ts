@@ -200,3 +200,77 @@ test("observer hooks skip subagents and recursive stop hooks", async () => {
   assert.deepEqual(await handleHook({ ...input, agent_id: "child" }, { host: "codex" }), {})
   assert.deepEqual(await handleHook({ nonsense: true }, { host: "codex" }), {})
 })
+
+test("late hook processes cannot spend quota or expire another prompt's note", async () => {
+  const root = await mkdtemp(join(tmpdir(), "ysk-late-hooks-"))
+  try {
+    const configPath = join(root, "config.json")
+    await writeFile(configPath, JSON.stringify({ observer: { ...config, minSteps: 1 } }))
+    for (const host of ["codex", "claude-code"] as const) {
+      const env = { YSK_DATA_DIR: join(root, host) }
+      const current = await createRuntime(root, configPath, env)
+      const delayed = await createRuntime(root, configPath, env)
+      let calls = 0
+      current.provider = delayed.provider = provider(undefined, () => calls++)
+      const promptField = host === "codex" ? "turn_id" : "prompt_id"
+      const event = { session_id: "session", cwd: root }
+      for (const id of ["new", "old"]) {
+        const [user, agent] = observation.messages
+        const rows =
+          host === "codex"
+            ? [
+                { type: "turn_context", payload: { turn_id: id } },
+                {
+                  type: "response_item",
+                  payload: { role: "user", id: "user-" + id, content: user!.text },
+                },
+                {
+                  type: "response_item",
+                  payload: { role: "assistant", id: agent!.id, content: agent!.text },
+                },
+                {
+                  type: "response_item",
+                  payload: { type: "function_call_output", output: "Finished " + id },
+                },
+              ]
+            : [
+                { uuid: "user-" + id, message: { role: "user", content: user!.text } },
+                { uuid: agent!.id, message: { role: "assistant", content: agent!.text } },
+                {
+                  uuid: "tool-" + id,
+                  message: {
+                    role: "user",
+                    content: [{ type: "tool_result", content: "Finished " + id }],
+                  },
+                },
+              ]
+        await writeFile(join(root, id), rows.map((row) => JSON.stringify(row)).join("\n"))
+      }
+      const stop = (id: string, session_id = event.session_id) => ({
+        ...event,
+        session_id,
+        hook_event_name: "Stop",
+        [promptField]: id,
+        transcript_path: join(root, id),
+      })
+      await handleHook(
+        { ...event, hook_event_name: "UserPromptSubmit", [promptField]: "new" },
+        { host, runtime: current },
+      )
+      await handleHook(stop("old"), { host, runtime: delayed })
+      assert.equal(calls, 0)
+      await handleHook(stop("new"), { host, runtime: current })
+      assert.equal(calls, 1)
+      await handleHook(stop("old"), { host, runtime: delayed })
+      assert.equal((await current.observer.notes())[0]?.status, "unread")
+      await handleHook(
+        { ...event, session_id: "ended", hook_event_name: "SessionEnd" },
+        { host, runtime: current },
+      )
+      await handleHook(stop("old", "ended"), { host, runtime: delayed })
+      assert.equal(calls, 1)
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
