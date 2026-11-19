@@ -2,6 +2,15 @@ import { createInterface } from "node:readline"
 
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`)
 const mode = process.env.MOCK_CODEX_MODE
+const failureMessages = new Map([
+  ["missing-model", 'HTTP 400: {"code":"model_not_found","message":"private diagnostic"}'],
+  ["unavailable-model-text", "The selected model is unavailable."],
+  ["unavailable-model-id", "Model gpt-5 is unavailable."],
+  ["unavailable-model-alias", "The model custom is not supported."],
+  ["unavailable-quoted-model", "The model 'another' does not exist."],
+  ["service-unavailable", "The upstream service is unavailable."],
+  ["model-service-unavailable", "The model service is unavailable."],
+])
 const lines = createInterface({ input: process.stdin })
 for await (const line of lines) {
   const message = JSON.parse(line)
@@ -21,7 +30,7 @@ for await (const line of lines) {
       params.config["features.shell_tool"] === false &&
       params.config.mcp_servers.private.enabled === false &&
       params.config.web_search === "disabled"
-    if (!safe) {
+    if (!safe || (mode === "missing-model" && params.model !== "unavailable-fixture")) {
       send({ id: message.id, error: { code: -32602 } })
       continue
     }
@@ -34,8 +43,69 @@ for await (const line of lines) {
     })
   }
   if (message.method === "turn/start") {
+    if (mode === "schema-default" || mode === "schema-native") {
+      const schema = message.params.outputSchema
+      const inText = message.params.input[0].text.includes("\n\nResponse schema:\n")
+      if (!schema?.properties?.note || inText !== (mode === "schema-default")) {
+        send({ id: message.id, error: { code: -32602 } })
+        continue
+      }
+    }
     send({ id: message.id, result: { turn: { id: "turn" } } })
     if (mode === "hang") continue
+    if (failureMessages.has(mode)) {
+      send({
+        method: "turn/completed",
+        params: {
+          threadId: "observer",
+          turn: {
+            status: "failed",
+            error: {
+              codexErrorInfo: "other",
+              message: failureMessages.get(mode),
+            },
+          },
+        },
+      })
+      continue
+    }
+    if (mode === "late-usage") {
+      for (const threadId of ["observer", "other"])
+        send({
+          method: "model/rerouted",
+          params: {
+            threadId,
+            turnId: "turn",
+            fromModel: "requested",
+            toModel: threadId === "observer" ? "served" : "unrelated",
+          },
+        })
+    }
+    if (mode === "usage") {
+      for (const threadId of ["observer", "other"]) {
+        send({
+          method: "thread/tokenUsage/updated",
+          params: {
+            threadId,
+            turnId: "turn",
+            tokenUsage: {
+              total: {
+                inputTokens: threadId === "observer" ? 120 : 999,
+                outputTokens: 8,
+                cachedInputTokens: 80,
+                cacheWriteInputTokens: 12,
+              },
+              last: {
+                inputTokens: 5,
+                outputTokens: 1,
+                cachedInputTokens: 0,
+                cacheWriteInputTokens: 0,
+              },
+            },
+          },
+        })
+      }
+    }
     if (mode === "action") {
       send({
         id: "approval",
@@ -59,5 +129,26 @@ for await (const line of lines) {
       method: "turn/completed",
       params: { threadId: "observer", turn: { id: "turn", status: "completed" } },
     })
+    if (mode === "late-usage") {
+      setTimeout(
+        () =>
+          send({
+            method: "thread/tokenUsage/updated",
+            params: {
+              threadId: "observer",
+              turnId: "turn",
+              tokenUsage: {
+                total: {
+                  inputTokens: 82,
+                  cachedInputTokens: 20,
+                  cacheWriteInputTokens: 0,
+                  outputTokens: 7,
+                },
+              },
+            },
+          }),
+        15,
+      )
+    }
   }
 }

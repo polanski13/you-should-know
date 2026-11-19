@@ -1,6 +1,7 @@
 import type { ProviderConfig } from "../core/config.js"
 import type { ModelProvider, ModelRequest, ModelResponse } from "../core/types.js"
 import { object } from "./json-lines.js"
+import { anthropicUsage, inclusiveUsage } from "./usage.js"
 
 async function readJson(response: Response): Promise<Record<string, unknown>> {
   if (!response.ok) {
@@ -30,6 +31,9 @@ async function readJson(response: Response): Promise<Record<string, unknown>> {
 
 export class HttpProvider implements ModelProvider {
   readonly name: string
+  get model(): string | undefined {
+    return this.config.model
+  }
 
   constructor(
     private readonly config: ProviderConfig,
@@ -91,12 +95,27 @@ export class HttpProvider implements ModelProvider {
         .map((item) => item.text)
         .join("\n")
       if (!text) throw new Error("Model returned no text")
-      return { text }
+      return {
+        text,
+        model: typeof json.model === "string" ? json.model : this.model,
+        usage: anthropicUsage(json.usage),
+      }
     }
     const choices = Array.isArray(json.choices) ? json.choices : []
     const message = object(object(choices[0]).message)
     if (message.tool_calls || typeof message.content !== "string")
       throw new Error("Model did not return a text-only response")
-    return { text: message.content }
+    const counts = object(json.usage)
+    const details = object(counts.prompt_tokens_details)
+    return {
+      text: message.content,
+      model: typeof json.model === "string" ? json.model : this.model,
+      usage: inclusiveUsage(
+        counts.prompt_tokens,
+        counts.completion_tokens,
+        details.cached_tokens,
+        details.cache_write_tokens,
+      ),
+    }
   }
 }

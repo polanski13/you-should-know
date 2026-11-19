@@ -96,10 +96,13 @@ Precedence: defaults → user configuration → project observer settings → Op
 | `timeoutMs`           | `45000`  | Integer, 1,000–180,000                                      |
 | `maxContextChars`     | `40000`  | Integer, 2,000–120,000                                      |
 | `maxMessageChars`     | `6000`   | Integer, 500–20,000                                         |
+| `compactToolLogs`     | `false`  | Fold identical tool-output lines before clipping            |
 | `minConfidence`       | `0.85`   | Number, 0.5–1; model-reported, not a calibrated probability |
 | `retentionDays`       | `30`     | Integer, 1–365                                              |
 
 The character budget bounds message text. The request also includes instructions, JSON structure, recent note summaries, and known topics. It is not a token or money cap.
+
+For tool messages of at least 2,000 characters, `compactToolLogs` folds a run of three or more identical nonblank lines when one line and its occurrence count take less space. The observer checks citations against the source text.
 
 ## Providers
 
@@ -127,6 +130,10 @@ Requires Codex **0.162.0+** and an existing sign-in (`codex login`). An optional
 For each check, the provider starts `codex app-server --stdio` in a temporary empty directory and creates an ephemeral, read-only thread. It disables tools, hooks, plugins, MCP servers, memory, and web search, and supplies no runtime workspace roots or environments. Unexpected tool activity or approval requests terminate the observation. The provider process inherits the local CLI environment for authentication; it is not an operating-system sandbox. The temporary directory is removed afterwards.
 
 Your configured Codex account/provider supplies the quota. The app-server API is version-sensitive. A successful `ysk doctor` checks the installed version, not a real inference; inspect authentication with `codex login status`.
+
+If a check returns `model_unavailable`, choose a model listed by `/model` in the signed-in client and set `provider.model` in the observer configuration. An explicit retry uses that selection.
+
+For a Codex-only experiment, set `YSK_CODEX_NATIVE_SCHEMA_ONLY=1` in the host environment. The schema travels in the native `outputSchema` field and the prompt omits its duplicate text. Unset the variable to restore the default prompt.
 
 ### OpenAI-compatible API
 
@@ -174,11 +181,17 @@ Uses the Messages API at `https://api.anthropic.com/v1/messages` by default, Bea
 
 Codex hooks must be enabled, for example with `codex --enable hooks`. A short turn with fewer than `minSteps` tool-result events will stay quiet, including at `Stop`. Parallel tool results count as their transcript represents them; cadence is not a count of wall-clock actions.
 
+If a hook sees the count jump from five to seven, it can run the check due at six. Further events in the same six-step window share that check.
+
+The first hook scans the transcript to find the current goal and count tool results. Subsequent hooks parse about the last 2 MB plus appended records. When the file grows they also hash the older prefix to detect in-place edits. A long turn retains its user message even when it falls outside that window. The local checkpoint stores byte offsets, hashes, a turn ID and counters. A file replacement triggers a fresh scan. If a single JSONL record exceeds 8 MB, the hook waits for the next readable user message before attributing later results.
+
 Background output does not inject instructions into the working agent. Claude's asynchronous hooks do not surface `systemMessage` directly, so delivery happens at the next prompt. Use `ysk watch` to see notes sooner. The actual display of hook messages depends on the host interface.
+
+Claude Code can fire `Stop` before the transcript contains its final reply. When the prompt IDs match, the observer includes that text. On an eligible turn previously checked by a tool hook, a changed final reply can trigger one follow-up even within the same cadence window. It waits for an active check. Pause, budgets and the one-note limit still apply.
 
 The installer is idempotent, writes atomically, and preserves a first backup as `<config-file>.before-ysk`. It refuses malformed JSON or unexpected hook structures. Uninstall removes registrations marked `--managed-by-ysk`; it does not restore an old file over newer user changes. Hook commands use absolute paths to the runtime and CLI, including the bundled Node.js in release installations.
 
-Hook processes share on-disk reservations. A new prompt invalidates the reservation so a stale result cannot be saved. Unlike in-process OpenCode cancellation, a different hook process may continue its already-started request until completion or timeout, consuming quota.
+Hook processes share on-disk reservations. A new prompt invalidates the previous reservation. On hosts that supply a Codex `turn_id` or Claude `prompt_id`, delayed events from an earlier prompt are also skipped before inference. Session end blocks late events until the next prompt. A request already started by another process may continue to consume quota until completion or timeout.
 
 ## CLI and MCP
 
@@ -192,7 +205,7 @@ For an explicit check, pipe an observation into the CLI:
 ysk check --manual --json < integrations/observation.json
 ```
 
-This is a real model request. `--manual` bypasses cadence, cooldown, and backoff; it does not bypass budgets, pause, identical context, an existing request, or the one-note-per-turn rule.
+This is a real model request. Use `--manual` to retry the same context after a provider error, timeout, or invalid answer. Each attempt counts toward your budget. Manual checks bypass cadence, cooldown, and backoff. Pause, in-flight checks, completed results on identical context, and the one-note-per-turn limit still apply.
 
 Observation input has `host`, `sessionId`, `turnId`, `step`, and `messages`. Each message has a unique `id`, a `role` (`user`, `assistant`, or `tool`), and `text`. Include the user's goal as well as relevant agent/tool output. CLI input is capped at 2 MB.
 
@@ -208,6 +221,8 @@ The MCP server uses the same runtime and limits:
 MCP does not automatically subscribe to another client's conversation. Its client must choose when to call `ysk_observe` and provide `step` accordingly. Use `--cwd` when starting the server so the project scope is explicit. Server stdout is reserved for protocol messages.
 
 ## Storage and data flow
+
+To measure observer usage locally, set `YSK_USAGE_LOG` to an absolute file path in an existing writable directory in the host's environment. Each completed provider attempt appends one JSON line with its outcome, elapsed time, model when known, and hashed project, session and turn identifiers. HTTP and Codex include token counts when reported. OpenCode 2.2 exposes only response text. Missing counts mean unknown. When Codex or an OpenAI-compatible provider reports total input with an incomplete cache breakdown, `unclassifiedInputTokens` records the input volume that cannot be priced separately. Cache reads and writes are subsets of total input. Anthropic also reports ordinary input and, when available, writes by TTL. The file contains no conversation text. The person enabling it controls its retention. On POSIX the logger restricts its file to the owner, including when appending to an existing file.
 
 ```text
 Host conversation

@@ -1,6 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { Observer } from "../src/core/observer.js"
+import { adapterText } from "../src/adapters/messages.js"
 import { digest, prepareContext, redact } from "../src/core/context.js"
 import { config, deferred, finding, MemoryStore, observation, provider } from "./helpers.js"
 import type { ModelRequest, ModelResponse } from "../src/core/types.js"
@@ -110,6 +111,66 @@ test("manual checks cannot bypass the project-wide hourly budget", async () => {
     true,
   )
   assert.deepEqual(result, { status: "skipped", reason: "budget" })
+})
+
+test("coalesced events check once per crossed cadence window and reset on a new turn", async () => {
+  const store = new MemoryStore()
+  const first = new Observer(store, config)
+  const second = new Observer(store, config)
+  let calls = 0
+  const quiet = provider(null, () => calls++)
+  const input = (step: number, turnId = observation.turnId) => ({
+    ...observation,
+    step,
+    turnId,
+    messages: [
+      ...observation.messages,
+      { id: "log", role: "tool" as const, text: `snapshot ${turnId} ${step}` },
+    ],
+  })
+  assert.equal((await first.observe(input(5), quiet)).status, "skipped")
+  const results = await Promise.all([
+    first.observe(input(7), quiet),
+    second.observe(input(7), quiet),
+  ])
+  assert.equal(results.filter((r) => r.status === "quiet").length, 1)
+  assert.deepEqual(await first.observe(input(8), quiet), { status: "skipped", reason: "cadence" })
+  assert.equal((await second.observe(input(12), quiet)).status, "quiet")
+  assert.equal((await second.observe(input(6, "next"), quiet)).status, "quiet")
+  assert.equal(calls, 3)
+})
+
+test("only an explicit retry can repeat failed context and each attempt consumes budget", async () => {
+  const store = new MemoryStore()
+  const observer = new Observer(store, { ...config, maxChecksPerSession: 2 })
+  const failed = {
+    name: "offline",
+    complete: async () => {
+      throw new Error("unavailable")
+    },
+  }
+  const quiet = provider(null)
+  assert.equal((await observer.observe(observation, failed)).status, "error")
+  assert.deepEqual(await observer.observe(observation, quiet), {
+    status: "skipped",
+    reason: "unchanged",
+  })
+  assert.deepEqual(await observer.observe(observation, quiet, true), {
+    status: "quiet",
+    reason: "no_finding",
+  })
+  assert.deepEqual(await observer.observe(observation, quiet, true), {
+    status: "skipped",
+    reason: "unchanged",
+  })
+  assert.equal(store.state.checks.length, 2)
+
+  const limited = new Observer(new MemoryStore(), { ...config, maxChecksPerSession: 1 })
+  await limited.observe(observation, failed)
+  assert.deepEqual(await limited.observe(observation, quiet, true), {
+    status: "skipped",
+    reason: "budget",
+  })
 })
 
 test("parallel observers reserve one request for the same session", async () => {
@@ -324,5 +385,84 @@ test("duplicate message identifiers are rejected before inference", async () => 
       provider(),
     ),
     /Message IDs must be unique/,
+  )
+})
+
+test("optional log compaction preserves distinct lines and the position of evidence", () => {
+  const progress = "Polling the export; all worker slots are busy.\n"
+  const clue = "The receipts file is missing."
+  const goal = { id: "u", role: "user" as const, text: "Verify the export." }
+  for (const [text, expectedCounts] of [
+    [clue + "\n" + progress.repeat(250), [250]],
+    [progress.repeat(125) + clue + "\n" + progress.repeat(125), [125, 125]],
+    [progress.repeat(250) + clue, [250]],
+  ] as const) {
+    const tool = { id: "t", role: "tool" as const, text }
+    const original = prepareContext([goal, tool], config)[1]!.text
+    const compact = prepareContext([goal, tool], { ...config, compactToolLogs: true })[1]!.text
+    assert.ok(compact.includes(clue))
+    assert.ok(compact.length < original.length)
+    assert.deepEqual(
+      Array.from(compact.matchAll(/\[preceding line occurs (\d+) times\]/g), (m) => Number(m[1])),
+      expectedCounts,
+    )
+    assert.equal(
+      prepareContext([goal, { ...tool, role: "assistant" }], {
+        ...config,
+        compactToolLogs: true,
+      })[1]!.text,
+      original,
+    )
+  }
+  const varied = {
+    id: "t",
+    role: "tool" as const,
+    text: Array.from({ length: 200 }, (_, i) => "Checked record " + i).join("\n"),
+  }
+  assert.deepEqual(
+    prepareContext([goal, varied], { ...config, compactToolLogs: true }),
+    prepareContext([goal, varied], config),
+  )
+})
+test("formatting added to compact logs cannot serve as evidence", async () => {
+  const repeated = "Worker heartbeat received. Waiting for another entry."
+  const input = {
+    ...observation,
+    messages: [
+      ...observation.messages,
+      { id: "log", role: "tool" as const, text: (repeated + "\n").repeat(100) + "Job finished." },
+    ],
+  }
+  for (const [quote, expected] of [
+    ["[preceding line occurs 100 times]", "quiet"],
+    ["Job finished.", "shown"],
+  ] as const) {
+    const observer = new Observer(new MemoryStore(), { ...config, compactToolLogs: true })
+    const result = await observer.observe(
+      input,
+      provider({
+        ...finding,
+        evidence: [{ messageId: "log", quote }],
+      }),
+    )
+    assert.equal(result.status, expected)
+    if (result.status === "quiet") assert.equal(result.reason, "unsubstantiated")
+  }
+})
+
+test("an adapter truncation marker is not tool evidence for compact logs", async () => {
+  const text = adapterText("ordinary output\n".repeat(9_000) + "Final result.")
+  assert.ok(text.includes("[...truncated...]"))
+  const input = {
+    ...observation,
+    messages: [...observation.messages, { id: "log", role: "tool" as const, text }],
+  }
+  const observer = new Observer(new MemoryStore(), { ...config, compactToolLogs: true })
+  assert.deepEqual(
+    await observer.observe(
+      input,
+      provider({ ...finding, evidence: [{ messageId: "log", quote: "[...truncated...]" }] }),
+    ),
+    { status: "quiet", reason: "unsubstantiated" },
   )
 })

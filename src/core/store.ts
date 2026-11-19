@@ -7,12 +7,33 @@ import { isErrno } from "./config.js"
 import { digest } from "./context.js"
 import { noteSchema } from "./types.js"
 
+const byteOffset = z.number().int().nonnegative()
+const transcriptCursorSchema = z.object({
+  file: z.string(),
+  size: byteOffset,
+  offset: byteOffset,
+  fingerprint: z.string(),
+  prefixDigest: z.string().length(64).optional(),
+  changed: z.number().optional(),
+  modified: z.number(),
+  steps: byteOffset,
+  turnId: z.string().optional(),
+  user: z.object({ offset: byteOffset, length: byteOffset, hash: z.string() }).optional(),
+})
+export type TranscriptCursor = z.infer<typeof transcriptCursorSchema>
+
 const sessionSchema = z.object({
   turnId: z.string(),
+  activeHookPrompt: z.string().min(1).max(240).nullable().optional().catch(undefined),
+  transcript: transcriptCursorSchema.optional(),
   touchedAt: z.number(),
   checks: z.number().int().nonnegative().default(0),
   lastCheckAt: z.number().default(0),
+  lastCadenceStep: z.number().int().nonnegative().optional(),
+  checkedThisTurn: z.boolean().optional(),
+  checkedFinal: z.boolean().optional(),
   revision: z.string().default(""),
+  lastCheckFailed: z.boolean().optional(),
   offeredTurn: z.string().optional(),
   noteId: z.string().optional(),
   ignored: z.number().int().nonnegative().default(0),
@@ -49,13 +70,15 @@ export class FileStore implements StateStore {
   private constructor(
     readonly directory: string,
     private readonly path: string,
+    readonly project: string,
   ) {}
 
   static async create(root: string, workspace: string): Promise<FileStore> {
     const canonical = await realpath(workspace).catch(() => resolve(workspace))
-    const directory = join(root, "projects", digest(canonical).slice(0, 24))
+    const project = digest(canonical)
+    const directory = join(root, "projects", project.slice(0, 24))
     await mkdir(directory, { recursive: true, mode: 0o700 })
-    return new FileStore(directory, join(directory, "state.json"))
+    return new FileStore(directory, join(directory, "state.json"), project)
   }
 
   async transact<T>(fn: (state: State) => T | Promise<T>): Promise<T> {

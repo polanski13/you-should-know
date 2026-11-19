@@ -9,7 +9,7 @@ import { languageOf } from "../src/opencode/copy.js"
 import { deferred, observation } from "./helpers.js"
 
 test(
-  "native hooks return before inference and a new prompt cancels stale work",
+  "native hooks recover from a failed session lookup and a new prompt cancels stale work",
   { timeout: 5_000 },
   async () => {
     const root = await mkdtemp(join(tmpdir(), "ysk-opencode-test-"))
@@ -20,6 +20,9 @@ test(
     const started = deferred<AbortSignal>()
     const changed = deferred<void>()
     let notifications = 0
+    let lookups = 0
+    let generations = 0
+    let unavailableLookups = 0
     let cleanup: (() => Promise<void>) | undefined
     try {
       const ctx = {
@@ -39,7 +42,15 @@ test(
           hook: async (name: string, handler: (event: never) => unknown) => {
             hooks.set(name, handler)
           },
-          get: async () => ({ parentID: undefined }),
+          get: async ({ sessionID }: { sessionID: string }) => {
+            if (sessionID === "unavailable") {
+              unavailableLookups++
+              throw new Error("Unreachable")
+            }
+            lookups++
+            if (lookups === 1) throw new Error("Session metadata is temporarily unavailable")
+            return { parentID: undefined }
+          },
         },
         experimental: {
           generate: {
@@ -50,6 +61,7 @@ test(
               assert.deepEqual(input.model, { id: "fixture", providerID: "fixture" })
               assert.ok(input.prompt.includes(observation.messages[0]!.text))
               assert.equal("tools" in input, false)
+              generations++
               started.resolve(options.signal)
               return new Promise(() => {})
             },
@@ -61,15 +73,19 @@ test(
         hooks.get("prompt")!({ sessionID: "session", messageID: "turn-1" } as never),
         undefined,
       )
-      assert.equal(
-        hooks.get("context")!({
-          sessionID: "session",
-          messages: observation.messages,
-          model: { id: "fixture", providerID: "fixture" },
-        } as never),
-        undefined,
-      )
+      const context = {
+        sessionID: "session",
+        messages: observation.messages,
+        model: { id: "fixture", providerID: "fixture" },
+      } as never
+      assert.equal(hooks.get("context")!(context), undefined)
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      assert.equal(lookups, 1)
+      assert.equal(generations, 0)
+      assert.equal(hooks.get("context")!(context), undefined)
       const signal = await started.promise
+      assert.equal(lookups, 2)
+      assert.equal(generations, 1)
       const aborted = new Promise<void>((resolve) =>
         signal.addEventListener("abort", () => resolve(), { once: true }),
       )
@@ -78,6 +94,20 @@ test(
       await changed.promise
       assert.equal(signal.aborted, true)
       assert.equal(notifications, 2)
+      const unavailable = {
+        sessionID: "unavailable",
+        messages: observation.messages,
+        model: { id: "fixture", providerID: "fixture" },
+      } as never
+      for (let i = 0; i < 7; i++) {
+        hooks.get("context")!(unavailable)
+        await new Promise<void>((resolve) => setImmediate(resolve))
+      }
+      assert.equal(unavailableLookups, 2)
+      hooks.get("prompt")!({ sessionID: "unavailable", messageID: "retry" } as never)
+      hooks.get("context")!(unavailable)
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      assert.equal(unavailableLookups, 3)
     } finally {
       await cleanup?.()
       for (const [key, value] of [

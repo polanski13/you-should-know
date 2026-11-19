@@ -1,7 +1,9 @@
 import { z } from "zod"
-import { cleanText } from "../core/context.js"
+import { setTimeout as sleep } from "node:timers/promises"
+import { cleanText, digest } from "../core/context.js"
 import { createRuntime } from "../runtime.js"
 import type { Runtime } from "../runtime.js"
+import { adapterText, recentMessages } from "./messages.js"
 import { readTranscript } from "./transcript.js"
 
 const inputSchema = z.object({
@@ -9,10 +11,43 @@ const inputSchema = z.object({
   cwd: z.string().min(1),
   hook_event_name: z.string(),
   transcript_path: z.string().nullish(),
-  turn_id: z.string().optional(),
+  turn_id: z.string().min(1).max(240).optional(),
+  prompt_id: z.string().min(1).max(240).optional(),
   stop_hook_active: z.boolean().optional(),
+  last_assistant_message: z.string().nullish(),
   agent_id: z.string().optional(),
 })
+
+async function waitForToolCheck(
+  runtime: Runtime,
+  key: string,
+  turn: string,
+  prompt: string,
+  deadline: number,
+) {
+  let delay = 75
+  while (Date.now() < deadline) {
+    const until = await runtime.store.transact((state) => {
+      const session = state.sessions[key]
+      if (
+        !session ||
+        state.paused ||
+        session.turnId !== turn ||
+        session.checkedFinal ||
+        session.offeredTurn === turn ||
+        (session.activeHookPrompt !== undefined && session.activeHookPrompt !== prompt)
+      )
+        return null
+      return session.lease?.until ?? 0
+    })
+    if (until === null) return false
+    const now = Date.now()
+    if (until <= now) return true
+    await sleep(Math.min(delay, until - now, Math.max(0, deadline - now)))
+    delay = Math.min(delay * 2, 1000)
+  }
+  return false
+}
 
 export async function handleHook(
   raw: unknown,
@@ -29,8 +64,9 @@ export async function handleHook(
   const input = parsed.data
   if (input.stop_hook_active || input.agent_id) return {}
   const runtime = options.runtime ?? (await createRuntime(input.cwd, undefined, env))
+  const promptId = options.host === "codex" ? input.turn_id : input.prompt_id
   if (input.hook_event_name === "UserPromptSubmit") {
-    await runtime.observer.invalidate(input.session_id)
+    await runtime.observer.invalidate(input.session_id, promptId)
     const notes = await runtime.observer.notifications(input.session_id)
     if (!notes.length) return {}
     const note = notes[0]!
@@ -41,30 +77,72 @@ export async function handleHook(
     }
   }
   if (input.hook_event_name === "SessionEnd") {
-    await runtime.observer.invalidate(input.session_id)
+    await runtime.observer.invalidate(input.session_id, null)
     return {}
   }
   if (!new Set(["PostToolUse", "Stop"]).has(input.hook_event_name) || !input.transcript_path)
     return {}
-  const transcript = await readTranscript(input.transcript_path)
-  if (
-    input.turn_id &&
-    transcript.turnId &&
-    options.host === "codex" &&
-    transcript.turnId !== input.turn_id
-  )
-    return {}
-  const turnId = input.turn_id ?? transcript.turnId
-  if (!turnId) return {}
-  await runtime.observer.observe(
-    {
-      host: options.host,
-      sessionId: input.session_id,
-      turnId,
-      step: transcript.steps,
-      messages: transcript.messages,
-    },
-    runtime.provider,
-  )
+  const key = digest(input.session_id)
+  const deadline = Date.now() + runtime.config.observer.timeoutMs + 5_500
+  let changes = 0
+  while (changes < 2) {
+    const previous = await runtime.store.transact((state) => state.sessions[key]?.transcript)
+    const transcript = await readTranscript(input.transcript_path, previous)
+    if (
+      options.host === "codex" &&
+      input.turn_id &&
+      transcript.turnId &&
+      transcript.turnId !== input.turn_id
+    )
+      return {}
+    const turnId = input.turn_id ?? transcript.turnId
+    if (!turnId) return {}
+    let messages = transcript.messages
+    let finalReply = false
+    if (options.host === "claude-code" && promptId && transcript.promptId) {
+      if (transcript.promptId !== promptId) return {}
+      if (input.hook_event_name === "Stop" && input.last_assistant_message?.trim()) {
+        finalReply = true
+        const text = adapterText(input.last_assistant_message)
+        const last = messages.at(-1)
+        if (last?.role !== "assistant" || last.text !== text) {
+          const id = "stop-" + digest(JSON.stringify([promptId, text])).slice(0, 24)
+          messages = recentMessages(
+            [...messages, { id, role: "assistant" as const, text }],
+            (m) => m.role === "user",
+          )
+        }
+      }
+    }
+    const result = await runtime.observer.observe(
+      {
+        host: options.host,
+        sessionId: input.session_id,
+        turnId,
+        step: transcript.steps,
+        messages,
+      },
+      runtime.provider,
+      false,
+      {
+        promptId,
+        cursor: transcript.cursor,
+        previousFingerprint: previous?.fingerprint,
+        finalReply,
+      },
+    )
+    if (result.status !== "skipped") break
+    if (result.reason === "transcript_changed") {
+      changes++
+      continue
+    }
+    if (
+      result.reason !== "in_flight" ||
+      !finalReply ||
+      !promptId ||
+      !(await waitForToolCheck(runtime, key, turnId, promptId, deadline))
+    )
+      break
+  }
   return {}
 }

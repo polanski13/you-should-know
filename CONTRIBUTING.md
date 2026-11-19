@@ -40,6 +40,8 @@ The core does not import host SDKs. Providers implement `ModelProvider`; stores 
 
 ## Changes worth testing
 
+Run `npm run eval:observer` to validate the synthetic corpus offline. The [observer evaluation](eval/README.md) explains how to run a blinded comparison with an explicitly selected model.
+
 Prefer regression tests for observable behavior: duplicate requests, stale results, lost writes, leaked context, incorrect hook merging, and protocol failures. A prompt improvement needs representative positive and negative examples; “always returns a note” is not a success criterion.
 
 For integration changes, test the supported host version as well as the adapter fixtures. Use synthetic conversations for live smoke checks, and say which host/version you tested. Do not commit real transcripts, credentials, local settings, or copied proprietary implementation material.

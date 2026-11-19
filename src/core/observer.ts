@@ -1,15 +1,17 @@
 import { randomUUID } from "node:crypto"
-import { comparable, digest, prepareContext, redact, topicKey } from "./context.js"
+import { comparable, digest, prepareContext, redact, topicKey, truncationLabel } from "./context.js"
 import type { ObserverConfig } from "./config.js"
 import { makePrompt, modelResponseSchema, observerInstructions } from "./prompt.js"
 import { prune } from "./store.js"
-import type { SessionState, State, StateStore } from "./store.js"
-import { observationSchema, responseSchema } from "./types.js"
+import type { SessionState, State, StateStore, TranscriptCursor } from "./store.js"
+import { ModelUnavailableError, observationSchema, responseSchema } from "./types.js"
+import type { UsageSink } from "./usage-log.js"
 import type {
   ContextMessage,
   Feedback,
   Finding,
   ModelProvider,
+  ModelResponse,
   Note,
   Observation,
   ObservationResult,
@@ -42,6 +44,9 @@ function sessionFor(
       session.skip = session.ignored <= 2 ? 0 : Math.min(16, 2 ** (session.ignored - 3))
     }
     session.turnId = input.turnId
+    session.lastCadenceStep = undefined
+    session.checkedThisTurn = undefined
+    session.checkedFinal = undefined
     session.noteId = undefined
     session.lease = undefined
   }
@@ -49,11 +54,20 @@ function sessionFor(
   return session
 }
 
-function grounded(finding: Finding, messages: ContextMessage[]): boolean {
+function grounded(
+  finding: Finding,
+  messages: ContextMessage[],
+  compactedSources?: ContextMessage[],
+): boolean {
   return (
     finding.evidence.every((evidence) => {
       const message = messages.find((item) => item.id === evidence.messageId)
-      return message !== undefined && message.text.includes(evidence.quote)
+      if (!message?.text.includes(evidence.quote)) return false
+      if (!compactedSources || message.role !== "tool") return true
+      if (evidence.quote.includes(truncationLabel)) return false
+      // A repetition marker describes the rendering. It cannot substantiate a note.
+      const original = compactedSources.find((item) => item.id === message.id)
+      return original !== undefined && redact(original.text).includes(evidence.quote)
     }) && redact(JSON.stringify(finding)) === JSON.stringify(finding)
   )
 }
@@ -67,22 +81,37 @@ export class Observer {
     readonly store: StateStore,
     readonly config: ObserverConfig,
     private readonly now: () => number = Date.now,
+    private readonly recordUsage?: UsageSink,
   ) {}
 
-  async beginTurn(sessionId: string, turnId: string): Promise<void> {
+  private activateTurn(sessionId: string, turnId: string): void {
     this.turns.set(sessionId, turnId)
     const current = this.running.get(sessionId)
     if (current && current.turnId !== turnId) current.controller.abort()
+  }
+
+  async beginTurn(sessionId: string, turnId: string): Promise<void> {
+    this.activateTurn(sessionId, turnId)
     await this.store.transact((state) => {
       sessionFor(state, { sessionId, turnId }, this.now())
     })
   }
 
-  async invalidate(sessionId: string): Promise<void> {
+  async invalidate(sessionId: string, activeHookPrompt?: string | null): Promise<void> {
+    if (
+      typeof activeHookPrompt === "string" &&
+      (!activeHookPrompt.length || activeHookPrompt.length > 240)
+    )
+      return
     this.running.get(sessionId)?.controller.abort()
     await this.store.transact((state) => {
-      const session = state.sessions[digest(sessionId)]
-      if (session) session.lease = undefined
+      const now = this.now()
+      prune(state, now, this.config.retentionDays)
+      const session =
+        state.sessions[digest(sessionId)] ?? sessionFor(state, { sessionId, turnId: "" }, now)
+      session.lease = undefined
+      session.activeHookPrompt = activeHookPrompt
+      session.touchedAt = now
     })
   }
 
@@ -106,43 +135,68 @@ export class Observer {
     raw: Observation,
     provider: ModelProvider,
     manual = false,
+    hook?: {
+      promptId?: string
+      cursor?: TranscriptCursor
+      previousFingerprint?: string
+      finalReply?: boolean
+    },
   ): Promise<ObservationResult> {
     if (this.closed) return { status: "skipped", reason: "disposed" }
     const input = observationSchema.parse(raw)
-    this.turns.set(input.sessionId, input.turnId)
-    const current = this.running.get(input.sessionId)
-    if (current && current.turnId !== input.turnId) current.controller.abort()
+    if (!hook) this.activateTurn(input.sessionId, input.turnId)
     const messages = prepareContext(input.messages, this.config)
-    if (messages.length < 2) {
-      await this.beginTurn(input.sessionId, input.turnId)
-      return { status: "skipped", reason: "insufficient_context" }
-    }
     const revision = digest(JSON.stringify(messages))
     const lease = randomUUID()
     const reservation = await this.store.transact((state) => {
       const now = this.now()
       prune(state, now, this.config.retentionDays)
-      const session = sessionFor(state, input, now)
       const skip = (reason: string) => ({ status: "skipped", reason }) as const
+      if (hook) {
+        const saved = state.sessions[digest(input.sessionId)]
+        const active = saved?.activeHookPrompt
+        // null marks SessionEnd. Undefined also supports hosts without prompt IDs.
+        if (active !== undefined && active !== hook.promptId) return skip("stale")
+        const fingerprint = saved?.transcript?.fingerprint
+        if (
+          hook.cursor &&
+          fingerprint !== hook.previousFingerprint &&
+          fingerprint !== hook.cursor.fingerprint
+        )
+          return skip("transcript_changed")
+        this.activateTurn(input.sessionId, input.turnId)
+      }
+      const session = sessionFor(state, input, now)
+      if (hook?.cursor) session.transcript = hook.cursor
+      if (messages.length < 2) return skip("insufficient_context")
       if (!this.config.enabled || state.paused) return skip("paused")
+      if (hook?.finalReply && session.checkedFinal) return skip("unchanged")
       if (session.lease && session.lease.until > now) return skip("in_flight")
       if (session.offeredTurn === input.turnId) return skip("already_offered")
-      if (session.revision === revision) return skip("unchanged")
+      if (session.revision === revision && !(manual && session.lastCheckFailed))
+        return skip("unchanged")
       if (
         session.checks >= this.config.maxChecksPerSession ||
         state.checks.length >= this.config.maxChecksPerHour
       )
         return skip("budget")
-      if (!manual && (input.step < this.config.minSteps || input.step % this.config.minSteps !== 0))
-        return skip("cadence")
-      if (!manual && session.checks > 0 && now - session.lastCheckAt < this.config.minIntervalMs)
+      const windowStart = input.step - (input.step % this.config.minSteps)
+      const followUp =
+        hook?.finalReply && session.checkedThisTurn && input.step >= this.config.minSteps
+      const scheduled = !manual && !followUp
+      if (scheduled && windowStart <= (session.lastCadenceStep ?? 0)) return skip("cadence")
+      if (scheduled && session.checks > 0 && now - session.lastCheckAt < this.config.minIntervalMs)
         return skip("cooldown")
-      if (!manual && session.skip > 0) {
+      session.lastCadenceStep = Math.max(session.lastCadenceStep ?? 0, input.step)
+      if (scheduled && session.skip > 0) {
         session.skip--
         return skip("backoff")
       }
       session.lease = { id: lease, until: now + this.config.timeoutMs + 5_000 }
+      session.checkedThisTurn = true
+      if (hook?.finalReply) session.checkedFinal = true
       session.revision = revision
+      session.lastCheckFailed = undefined
       session.lastCheckAt = now
       session.checks++
       state.checks.push(now)
@@ -164,6 +218,9 @@ export class Observer {
     const controller = new AbortController()
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(this.config.timeoutMs)])
     this.running.set(input.sessionId, { turnId: input.turnId, controller })
+    const startedAt = this.now()
+    let usage: ModelResponse["usage"]
+    let model = provider.model
     let outcome: ObservationResult
     let finding: Finding | null = null
     try {
@@ -174,12 +231,15 @@ export class Observer {
           known: reservation.known,
           recent: reservation.recent,
           language: this.config.language,
+          nativeOutputSchemaOnly: provider.nativeOutputSchemaOnly,
         }),
         schema: modelResponseSchema,
         signal,
         maxOutputTokens: 1_200,
       })
       const response = await abortable(request, signal)
+      usage = response.usage
+      model = response.model ?? model
       if (response.text.length > 32_000) throw new InvalidResponse()
       const parsed = responseSchema.safeParse(parseResponse(response.text))
       if (!parsed.success) throw new InvalidResponse()
@@ -189,7 +249,7 @@ export class Observer {
           ? { status: "quiet", reason: "no_finding" }
           : finding.confidence < this.config.minConfidence
             ? { status: "quiet", reason: "low_confidence" }
-            : !grounded(finding, messages)
+            : !grounded(finding, messages, this.config.compactToolLogs ? input.messages : undefined)
               ? { status: "quiet", reason: "unsubstantiated" }
               : { status: "quiet", reason: "no_finding" }
     } catch (error) {
@@ -201,17 +261,20 @@ export class Observer {
             : "timeout"
           : error instanceof InvalidResponse || error instanceof SyntaxError
             ? "invalid_response"
-            : "provider_error",
+            : error instanceof ModelUnavailableError
+              ? "model_unavailable"
+              : "provider_error",
       }
     } finally {
       if (this.running.get(input.sessionId)?.controller === controller)
         this.running.delete(input.sessionId)
     }
-    return this.store.transact((state) => {
+    const result = await this.store.transact<ObservationResult>((state) => {
       const session = state.sessions[digest(input.sessionId)]
       if (session?.lease?.id !== lease || session.turnId !== input.turnId)
         return { status: "skipped", reason: "stale" }
       session.lease = undefined
+      if (outcome.status === "error") session.lastCheckFailed = true
       if (controller.signal.aborted) return { status: "skipped", reason: "stale" }
       if (state.paused) return { status: "skipped", reason: "paused" }
       if (!finding || outcome.status !== "quiet" || outcome.reason !== "no_finding") return outcome
@@ -241,6 +304,21 @@ export class Observer {
       session.offeredTurn = input.turnId
       return { status: "shown", note }
     })
+    if (this.recordUsage) {
+      await this.recordUsage({
+        startedAt,
+        durationMs: this.now() - startedAt,
+        host: input.host,
+        sessionId: input.sessionId,
+        turnId: input.turnId,
+        provider: provider.name,
+        model,
+        status: result.status,
+        reason: result.status === "shown" ? undefined : result.reason,
+        usage,
+      }).catch(() => undefined)
+    }
+    return result
   }
 
   async notes(sessionId?: string): Promise<Note[]> {

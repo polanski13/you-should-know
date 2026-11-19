@@ -14,6 +14,7 @@ export const observerConfigSchema = z
     timeoutMs: z.number().int().min(1_000).max(180_000).default(45_000),
     maxContextChars: z.number().int().min(2_000).max(120_000).default(40_000),
     maxMessageChars: z.number().int().min(500).max(20_000).default(6_000),
+    compactToolLogs: z.boolean().optional(),
     minConfidence: z.number().min(0.5).max(1).default(0.85),
     retentionDays: z.number().int().min(1).max(365).default(30),
   })

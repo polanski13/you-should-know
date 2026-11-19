@@ -67,16 +67,39 @@ export interface ModelRequest {
 
 export interface ModelResponse {
   text: string
-  usage?: { inputTokens?: number; outputTokens?: number }
+  model?: string
+  usage?: ModelUsage
+}
+
+export interface ModelUsage {
+  inputTokens?: number
+  uncachedInputTokens?: number
+  unclassifiedInputTokens?: number
+  cachedInputTokens?: number
+  cacheWriteInputTokens?: number
+  cacheWrite5mInputTokens?: number
+  cacheWrite1hInputTokens?: number
+  outputTokens?: number
 }
 
 export interface ModelProvider {
   readonly name: string
+  readonly model?: string
+  readonly nativeOutputSchemaOnly?: boolean
   complete(request: ModelRequest): Promise<ModelResponse>
+}
+
+export class ModelUnavailableError extends Error {
+  constructor() {
+    super("The selected model is unavailable for this account.")
+  }
 }
 
 export type ObservationResult =
   | { status: "shown"; note: Note }
   | { status: "quiet"; reason: "no_finding" | "unsubstantiated" | "duplicate" | "low_confidence" }
   | { status: "skipped"; reason: string }
-  | { status: "error"; reason: "provider_error" | "invalid_response" | "timeout" | "cancelled" }
+  | {
+      status: "error"
+      reason: "provider_error" | "model_unavailable" | "invalid_response" | "timeout" | "cancelled"
+    }

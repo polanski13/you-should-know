@@ -3,6 +3,7 @@ import { dataDirectory, loadConfig } from "./core/config.js"
 import { Observer } from "./core/observer.js"
 import { FileStore } from "./core/store.js"
 import { createProvider } from "./providers/index.js"
+import { localUsageLog } from "./core/usage-log.js"
 
 export async function createRuntime(
   workspace = process.cwd(),
@@ -16,7 +17,12 @@ export async function createRuntime(
     workspace,
     config,
     store,
-    observer: new Observer(store, config.observer),
+    observer: new Observer(
+      store,
+      config.observer,
+      Date.now,
+      localUsageLog(env.YSK_USAGE_LOG, store.project),
+    ),
     provider: createProvider(config.provider, env),
   }
 }
