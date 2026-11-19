@@ -66,7 +66,10 @@ export default {
           ctx.session
             .get({ sessionID: event.sessionID }, { signal: lifetime.signal })
             .then((session) => !session.parentID)
-            .catch(() => false),
+            .catch(() => {
+              roots.delete(event.sessionID)
+              return false
+            }),
         )
       }
       const snapshot = { ...turn }

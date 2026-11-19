@@ -9,7 +9,7 @@ import { languageOf } from "../src/opencode/copy.js"
 import { deferred, observation } from "./helpers.js"
 
 test(
-  "native hooks return before inference and a new prompt cancels stale work",
+  "native hooks recover from a failed session lookup and a new prompt cancels stale work",
   { timeout: 5_000 },
   async () => {
     const root = await mkdtemp(join(tmpdir(), "ysk-opencode-test-"))
@@ -20,6 +20,7 @@ test(
     const started = deferred<AbortSignal>()
     const changed = deferred<void>()
     let notifications = 0
+    let lookups = 0
     let cleanup: (() => Promise<void>) | undefined
     try {
       const ctx = {
@@ -39,7 +40,11 @@ test(
           hook: async (name: string, handler: (event: never) => unknown) => {
             hooks.set(name, handler)
           },
-          get: async () => ({ parentID: undefined }),
+          get: async () => {
+            lookups++
+            if (lookups === 1) throw new Error("Session metadata is temporarily unavailable")
+            return { parentID: undefined }
+          },
         },
         experimental: {
           generate: {
@@ -61,15 +66,17 @@ test(
         hooks.get("prompt")!({ sessionID: "session", messageID: "turn-1" } as never),
         undefined,
       )
-      assert.equal(
-        hooks.get("context")!({
-          sessionID: "session",
-          messages: observation.messages,
-          model: { id: "fixture", providerID: "fixture" },
-        } as never),
-        undefined,
-      )
+      const context = {
+        sessionID: "session",
+        messages: observation.messages,
+        model: { id: "fixture", providerID: "fixture" },
+      } as never
+      assert.equal(hooks.get("context")!(context), undefined)
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      assert.equal(lookups, 1)
+      assert.equal(hooks.get("context")!(context), undefined)
       const signal = await started.promise
+      assert.equal(lookups, 2)
       const aborted = new Promise<void>((resolve) =>
         signal.addEventListener("abort", () => resolve(), { once: true }),
       )
