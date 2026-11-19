@@ -13,6 +13,7 @@ const sessionSchema = z.object({
   checks: z.number().int().nonnegative().default(0),
   lastCheckAt: z.number().default(0),
   revision: z.string().default(""),
+  lastCheckFailed: z.boolean().optional(),
   offeredTurn: z.string().optional(),
   noteId: z.string().optional(),
   ignored: z.number().int().nonnegative().default(0),

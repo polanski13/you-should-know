@@ -112,6 +112,39 @@ test("manual checks cannot bypass the project-wide hourly budget", async () => {
   assert.deepEqual(result, { status: "skipped", reason: "budget" })
 })
 
+test("only an explicit retry can repeat failed context and each attempt consumes budget", async () => {
+  const store = new MemoryStore()
+  const observer = new Observer(store, { ...config, maxChecksPerSession: 2 })
+  const failed = {
+    name: "offline",
+    complete: async () => {
+      throw new Error("unavailable")
+    },
+  }
+  const quiet = provider(null)
+  assert.equal((await observer.observe(observation, failed)).status, "error")
+  assert.deepEqual(await observer.observe(observation, quiet), {
+    status: "skipped",
+    reason: "unchanged",
+  })
+  assert.deepEqual(await observer.observe(observation, quiet, true), {
+    status: "quiet",
+    reason: "no_finding",
+  })
+  assert.deepEqual(await observer.observe(observation, quiet, true), {
+    status: "skipped",
+    reason: "unchanged",
+  })
+  assert.equal(store.state.checks.length, 2)
+
+  const limited = new Observer(new MemoryStore(), { ...config, maxChecksPerSession: 1 })
+  await limited.observe(observation, failed)
+  assert.deepEqual(await limited.observe(observation, quiet, true), {
+    status: "skipped",
+    reason: "budget",
+  })
+})
+
 test("parallel observers reserve one request for the same session", async () => {
   const store = new MemoryStore()
   const first = new Observer(store, config)

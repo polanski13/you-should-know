@@ -192,7 +192,7 @@ Codex 必须启用钩子，例如使用 `codex --enable hooks`。工具结果事
 ysk check --manual --json < integrations/observation.json
 ```
 
-这会发起真实模型请求。`--manual` 跳过检查频率、冷却和退避，但不绕过预算、暂停、相同上下文、现有请求或每轮一条提示的限制。
+这会发起真实模型请求。提供商出错、请求超时或返回无效内容后，可用 `--manual` 对相同上下文重试。每次尝试都计入预算。手动检查跳过频率、冷却和退避限制，仍遵守暂停状态、正在处理的请求、已有结果去重以及每轮一条提示的限制。
 
 观察输入包含 `host`、`sessionId`、`turnId`、`step` 和 `messages`。每条消息包含唯一 `id`、`role`（`user`、`assistant` 或 `tool`）及 `text`。请提供用户目标以及相关智能体或工具输出。CLI 输入上限为 2 MB。
 

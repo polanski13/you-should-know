@@ -192,7 +192,7 @@ For an explicit check, pipe an observation into the CLI:
 ysk check --manual --json < integrations/observation.json
 ```
 
-This is a real model request. `--manual` bypasses cadence, cooldown, and backoff; it does not bypass budgets, pause, identical context, an existing request, or the one-note-per-turn rule.
+This is a real model request. Use `--manual` to retry the same context after a provider error, timeout, or invalid answer. Each attempt counts toward your budget. Manual checks bypass cadence, cooldown, and backoff. Pause, in-flight checks, completed results on identical context, and the one-note-per-turn limit still apply.
 
 Observation input has `host`, `sessionId`, `turnId`, `step`, and `messages`. Each message has a unique `id`, a `role` (`user`, `assistant`, or `tool`), and `text`. Include the user's goal as well as relevant agent/tool output. CLI input is capped at 2 MB.
 

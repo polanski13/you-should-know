@@ -130,7 +130,8 @@ export class Observer {
       if (!this.config.enabled || state.paused) return skip("paused")
       if (session.lease && session.lease.until > now) return skip("in_flight")
       if (session.offeredTurn === input.turnId) return skip("already_offered")
-      if (session.revision === revision) return skip("unchanged")
+      if (session.revision === revision && !(manual && session.lastCheckFailed))
+        return skip("unchanged")
       if (
         session.checks >= this.config.maxChecksPerSession ||
         state.checks.length >= this.config.maxChecksPerHour
@@ -146,6 +147,7 @@ export class Observer {
       }
       session.lease = { id: lease, until: now + this.config.timeoutMs + 5_000 }
       session.revision = revision
+      session.lastCheckFailed = undefined
       session.lastCheckAt = now
       session.checks++
       state.checks.push(now)
@@ -220,6 +222,7 @@ export class Observer {
       if (session?.lease?.id !== lease || session.turnId !== input.turnId)
         return { status: "skipped", reason: "stale" }
       session.lease = undefined
+      if (outcome.status === "error") session.lastCheckFailed = true
       if (controller.signal.aborted) return { status: "skipped", reason: "stale" }
       if (state.paused) return { status: "skipped", reason: "paused" }
       if (!finding || outcome.status !== "quiet" || outcome.reason !== "no_finding") return outcome
