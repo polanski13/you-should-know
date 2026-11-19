@@ -2,6 +2,7 @@ import { z } from "zod"
 import { cleanText, digest } from "../core/context.js"
 import { createRuntime } from "../runtime.js"
 import type { Runtime } from "../runtime.js"
+import { adapterText, recentMessages } from "./messages.js"
 import { readTranscript } from "./transcript.js"
 
 const inputSchema = z.object({
@@ -12,6 +13,7 @@ const inputSchema = z.object({
   turn_id: z.string().optional(),
   prompt_id: z.string().min(1).max(240).optional(),
   stop_hook_active: z.boolean().optional(),
+  last_assistant_message: z.string().nullish(),
   agent_id: z.string().optional(),
 })
 
@@ -61,13 +63,28 @@ export async function handleHook(
       return {}
     const turnId = input.turn_id ?? transcript.turnId
     if (!turnId) return {}
+    let messages = transcript.messages
+    if (options.host === "claude-code" && promptId && transcript.promptId) {
+      if (transcript.promptId !== promptId) return {}
+      if (input.hook_event_name === "Stop" && input.last_assistant_message?.trim()) {
+        const text = adapterText(input.last_assistant_message)
+        const last = messages.at(-1)
+        if (last?.role !== "assistant" || last.text !== text) {
+          const id = "stop-" + digest(JSON.stringify([promptId, text])).slice(0, 24)
+          messages = recentMessages(
+            [...messages, { id, role: "assistant" as const, text }],
+            (m) => m.role === "user",
+          )
+        }
+      }
+    }
     const result = await runtime.observer.observe(
       {
         host: options.host,
         sessionId: input.session_id,
         turnId,
         step: transcript.steps,
-        messages: transcript.messages,
+        messages,
       },
       runtime.provider,
       false,

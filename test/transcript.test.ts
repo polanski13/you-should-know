@@ -134,3 +134,37 @@ test("a new turn marker without its user message never borrows an earlier goal",
   assert.equal(batch.turnId, "new")
   assert.deepEqual(batch.messages, [])
 })
+test("a native Stop payload supplies the final text once for its own prompt", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "ysk-native-stop-"))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const path = join(dir, "chat.jsonl")
+  const config = join(dir, "config.json")
+  await writeFile(config, JSON.stringify({ observer: { minSteps: 1, minIntervalMs: 0 } }))
+  const runtime = await createRuntime(dir, config, { YSK_DATA_DIR: join(dir, "state") })
+  const captured: string[] = []
+  runtime.provider = provider(null, (req) => captured.push(req.prompt))
+  const event = { cwd: dir, session_id: "s", prompt_id: "p", transcript_path: path }
+  const stop = {
+    ...event,
+    hook_event_name: "Stop",
+    last_assistant_message: "All checks completed.",
+  }
+  const goal = (p: string) =>
+    line({ uuid: "u-" + p, promptId: p, message: { role: "user", content: "Verify the build" } })
+  const options = { host: "claude-code" as const, runtime }
+  await handleHook({ ...event, hook_event_name: "UserPromptSubmit" }, options)
+  await writeFile(path, goal("previous") + tool("t0", "Old warning"))
+  await handleHook(stop, options)
+  assert.equal(captured.length, 0)
+  await appendFile(path, goal("p") + tool("t1", "Two tests failed"))
+  await handleHook(stop, options)
+  assert.match(captured[0]!, /All checks completed\./)
+  const flushed = line({
+    uuid: "final",
+    message: { role: "assistant", content: stop.last_assistant_message },
+  })
+  await appendFile(path, tool("t2", "One more test") + flushed)
+  await handleHook(stop, options)
+  assert.equal(captured.length, 2)
+  assert.equal(captured[1]!.split(stop.last_assistant_message).length - 1, 1)
+})

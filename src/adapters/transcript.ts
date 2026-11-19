@@ -17,6 +17,7 @@ export interface Transcript {
 interface Event {
   message?: ContextMessage
   turnId?: string
+  promptId?: string
   step?: boolean
 }
 
@@ -65,6 +66,7 @@ function decode(line: string, offset: number): Event {
   return {
     message: { id, role: role as ContextMessage["role"], text },
     step,
+    promptId: role === "user" && typeof entry.promptId === "string" ? entry.promptId : undefined,
     turnId: role === "user" && entry.type !== "response_item" ? id : undefined,
   }
 }
@@ -116,17 +118,21 @@ async function restore(
   if (previous.fingerprint !== (await fingerprint(file, identity, previous.size, previous.offset)))
     return
   let user: ContextMessage | undefined
+  let promptId: string | undefined
   if (previous.user) {
     const ref = previous.user
     if (ref.length > maxRecordBytes || ref.offset + ref.length > previous.offset) return
     const line = (await readBytes(file, ref.offset, ref.length)).toString("utf8")
     if (digest(line) !== ref.hash) return
-    user = decode(line, ref.offset).message
+    const event = decode(line, ref.offset)
+    user = event.message
+    promptId = event.promptId
     if (user?.role !== "user") return
   }
   return {
     position: { steps: previous.steps, turnId: previous.turnId, user: previous.user },
     user,
+    promptId,
     offset: previous.offset,
   }
 }
@@ -134,7 +140,7 @@ async function restore(
 export async function readTranscript(
   path: string,
   previous?: TranscriptCursor,
-): Promise<Transcript & { cursor: TranscriptCursor }> {
+): Promise<Transcript & { cursor: TranscriptCursor; promptId?: string }> {
   const file = await open(path, "r")
   try {
     const stat = await file.stat()
@@ -143,6 +149,7 @@ export async function readTranscript(
     const saved = await restore(file, previous, identity, stat.size, stat.mtimeMs)
     const position: Position = saved?.position ?? { steps: 0 }
     let latestUser = saved?.user
+    let promptId = saved?.promptId
     const cutoff = Math.max(0, stat.size - 2_000_000)
     const start = saved?.offset ?? 0
     let offset = start
@@ -155,14 +162,19 @@ export async function readTranscript(
         position.turnId = undefined
         position.steps = 0
         latestUser = undefined
+        promptId = undefined
         messages.length = 0
       } else {
         const event = decode(row.text, row.offset)
-        if (event.turnId !== undefined && event.turnId !== position.turnId) latestUser = undefined
+        if (event.turnId !== undefined && event.turnId !== position.turnId) {
+          latestUser = undefined
+          promptId = undefined
+        }
         advance(position, event)
         if (event.message?.role === "user") {
           position.user = { offset: row.offset, length: row.length, hash: digest(row.text) }
           latestUser = event.message
+          promptId = event.promptId
         }
         if (row.next > cutoff && event.message) messages.push(event.message)
       }
@@ -191,6 +203,7 @@ export async function readTranscript(
     if (latestUser && !messages.includes(latestUser)) messages.unshift(latestUser)
     return {
       cursor,
+      promptId,
       turnId: position.turnId,
       steps: position.steps,
       messages: latestUser ? recentMessages(messages, (m) => m.role === "user") : [],

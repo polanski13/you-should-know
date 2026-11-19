@@ -184,6 +184,8 @@ The first hook scans the transcript to find the current goal and count tool resu
 
 Background output does not inject instructions into the working agent. Claude's asynchronous hooks do not surface `systemMessage` directly, so delivery happens at the next prompt. Use `ysk watch` to see notes sooner. The actual display of hook messages depends on the host interface.
 
+Claude Code can fire `Stop` before the transcript contains its final reply. When the event and the latest user record have matching prompt IDs, the observer also reads the final text supplied by the event.
+
 The installer is idempotent, writes atomically, and preserves a first backup as `<config-file>.before-ysk`. It refuses malformed JSON or unexpected hook structures. Uninstall removes registrations marked `--managed-by-ysk`; it does not restore an old file over newer user changes. Hook commands use absolute paths to the runtime and CLI, including the bundled Node.js in release installations.
 
 Hook processes share on-disk reservations. A new prompt invalidates the previous reservation. On hosts that supply a Codex `turn_id` or Claude `prompt_id`, delayed events from an earlier prompt are also skipped before inference. Session end blocks late events until the next prompt. A request already started by another process may continue to consume quota until completion or timeout.
