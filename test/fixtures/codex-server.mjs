@@ -21,7 +21,7 @@ for await (const line of lines) {
       params.config["features.shell_tool"] === false &&
       params.config.mcp_servers.private.enabled === false &&
       params.config.web_search === "disabled"
-    if (!safe) {
+    if (!safe || (mode === "missing-model" && params.model !== "unavailable-fixture")) {
       send({ id: message.id, error: { code: -32602 } })
       continue
     }
@@ -58,6 +58,18 @@ for await (const line of lines) {
         },
       })
       continue
+    }
+    if (mode === "late-usage") {
+      for (const threadId of ["observer", "other"])
+        send({
+          method: "model/rerouted",
+          params: {
+            threadId,
+            turnId: "turn",
+            fromModel: "requested",
+            toModel: threadId === "observer" ? "served" : "unrelated",
+          },
+        })
     }
     if (mode === "usage") {
       for (const threadId of ["observer", "other"]) {
@@ -107,5 +119,26 @@ for await (const line of lines) {
       method: "turn/completed",
       params: { threadId: "observer", turn: { id: "turn", status: "completed" } },
     })
+    if (mode === "late-usage") {
+      setTimeout(
+        () =>
+          send({
+            method: "thread/tokenUsage/updated",
+            params: {
+              threadId: "observer",
+              turnId: "turn",
+              tokenUsage: {
+                total: {
+                  inputTokens: 82,
+                  cachedInputTokens: 20,
+                  cacheWriteInputTokens: 0,
+                  outputTokens: 7,
+                },
+              },
+            },
+          }),
+        15,
+      )
+    }
   }
 }

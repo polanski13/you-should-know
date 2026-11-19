@@ -48,7 +48,12 @@ export function observerCodexConfig(mcpNames: string[]): Record<string, unknown>
 export class CodexProvider implements ModelProvider {
   readonly name = "codex"
   get nativeOutputSchemaOnly(): boolean {
-    return (this.options.env ?? process.env).YSK_CODEX_NATIVE_SCHEMA_ONLY === "1"
+    const env = this.options.env
+    return (
+      (env && Object.hasOwn(env, "YSK_CODEX_NATIVE_SCHEMA_ONLY")
+        ? env.YSK_CODEX_NATIVE_SCHEMA_ONLY
+        : process.env.YSK_CODEX_NATIVE_SCHEMA_ONLY) === "1"
+    )
   }
   get model(): string | undefined {
     return this.options.model
@@ -108,7 +113,8 @@ export class CodexProvider implements ModelProvider {
       if (typeof threadId !== "string" || object(started.sandbox).type !== "readOnly")
         throw new Error("Codex did not establish an isolated read-only thread")
       const response = await runTurn(client, threadId, request)
-      const model = typeof started.model === "string" ? started.model : this.model
+      const model =
+        response.model ?? (typeof started.model === "string" ? started.model : this.model)
       return model ? { ...response, model } : response
     } finally {
       client?.close()
@@ -124,15 +130,20 @@ async function runTurn(
 ): Promise<ModelResponse> {
   let finalText = ""
   let usage: ModelResponse["usage"]
+  let model: string | undefined
+  let completed = false
+  let drain: ReturnType<typeof setTimeout> | undefined
   let unsubscribe = () => {}
-  const result = new Promise<ModelResponse>((resolve, reject) => {
+  const result = new Promise<void>((resolve, reject) => {
     unsubscribe = client.subscribe((method, raw) => {
       const params = object(raw)
       if (method === "ysk/closed") {
-        reject(new Error("Codex closed during observation"))
+        if (completed) resolve()
+        else reject(new Error("Codex closed during observation"))
         return
       }
       if (params.threadId !== threadId) return
+      if (method === "model/rerouted" && typeof params.toModel === "string") model = params.toModel
       if (method === "thread/tokenUsage/updated") {
         // Each observation starts a fresh thread. Totals also cover internal continuations.
         const counts = object(object(params.tokenUsage).total)
@@ -142,6 +153,7 @@ async function runTurn(
           counts.cachedInputTokens,
           counts.cacheWriteInputTokens,
         )
+        if (completed && usage) resolve()
       }
       if (method === "item/started" || method === "item/completed") {
         const item = object(params.item)
@@ -168,7 +180,12 @@ async function runTurn(
           reject(new ModelUnavailableError())
         else if (turn.status !== "completed" || !finalText)
           reject(new Error("Codex did not complete a text-only observation"))
-        else resolve(usage ? { text: finalText, usage } : { text: finalText })
+        else {
+          completed = true
+          if (usage) resolve()
+          // Some versions deliver usage just after completion. Text-only providers still finish.
+          else drain = setTimeout(resolve, 150)
+        }
       }
     })
   })
@@ -181,8 +198,10 @@ async function runTurn(
       summary: "none",
       outputSchema: request.schema,
     })
-    return await result
+    await result
+    return { text: finalText, ...(usage && { usage }), ...(model && { model }) }
   } finally {
+    clearTimeout(drain)
     unsubscribe()
   }
 }

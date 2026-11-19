@@ -69,6 +69,7 @@ test("an unavailable configured model returns an actionable reason without provi
     executable: process.execPath,
     args: [fixture],
     env: { MOCK_CODEX_MODE: "missing-model" },
+    model: "unavailable-fixture",
   })
   const observer = new Observer(new MemoryStore(), config)
   assert.deepEqual(await observer.observe(observation, provider), {
@@ -215,4 +216,30 @@ test("Codex reports the total for this observation and ignores other threads", a
     cacheWriteInputTokens: 12,
     uncachedInputTokens: 28,
   })
+})
+test("the served model and trailing billing event survive turn completion", async () => {
+  const provider = new CodexProvider({
+    executable: process.execPath,
+    args: [fixture],
+    model: "requested",
+    env: { MOCK_CODEX_MODE: "late-usage" },
+  })
+  const result = await provider.complete(request())
+  assert.equal(result.model, "served")
+  assert.equal(result.usage?.uncachedInputTokens, 62)
+  assert.equal(result.usage?.outputTokens, 7)
+})
+
+test("a partial process environment inherits the native schema flag", (t) => {
+  const old = process.env.YSK_CODEX_NATIVE_SCHEMA_ONLY
+  t.after(() => {
+    if (old === undefined) delete process.env.YSK_CODEX_NATIVE_SCHEMA_ONLY
+    else process.env.YSK_CODEX_NATIVE_SCHEMA_ONLY = old
+  })
+  process.env.YSK_CODEX_NATIVE_SCHEMA_ONLY = "1"
+  assert.equal(new CodexProvider({ env: {} }).nativeOutputSchemaOnly, true)
+  assert.equal(
+    new CodexProvider({ env: { YSK_CODEX_NATIVE_SCHEMA_ONLY: "0" } }).nativeOutputSchemaOnly,
+    false,
+  )
 })
