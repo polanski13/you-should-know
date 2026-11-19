@@ -1,8 +1,10 @@
-## OpenCode card layout fix
+## More reliable notes in long conversations
 
-Version 0.2.1 fixes text and buttons overflowing the OpenCode popover. Notes now use a compact pill, a clear summary inside the card, native OpenCode buttons in two rows, and scrollable content for long explanations and evidence.
+Version 0.2.2 keeps track of your request through long transcripts and parallel tool calls. Delayed events that identify an earlier turn leave the current turn's quota available.
 
-The actual GUI bundle was checked at 220, 280, and 320 pixels in English, Russian, and Simplified Chinese, including long unbroken text and expanded evidence.
+Claude Code can now check a final reply that arrives while an earlier check is still running. You can also retry a failed observation manually within your existing limits. If your selected model is unavailable, the observer reports that reason.
+
+Two optional settings can reduce the input sent to the observer by compacting repeated tool output or omitting a duplicate response schema for the Codex provider. Both are off by default. You can also enable a local usage log to see the model, duration and reported token counts. [Observer configuration](https://github.com/polanski13/you-should-know/blob/v0.2.2/docs/en/guide.md)
 
 ## Install or update in one command
 

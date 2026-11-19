@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.2 — 2026-11-19
+
+### Fixed
+
+- Long conversations retain the user's request and tool count across transcript updates. Parallel tool results and delayed events now stay with the correct turn.
+- Claude Code can check the final reply when it arrives during a background observation. A repeated stop event does not spend quota twice.
+- Manual checks can retry a failed observation within the configured limits. An unavailable model is reported separately from a service failure.
+- Windows release builds reliably extract the bundled Node.js runtime.
+
+### Added
+
+- Optional local usage logging records available model, timing and token counts without storing conversation text.
+- Optional settings compact repeated tool output or send the response schema only through the Codex provider’s native API. Both default to off. Evidence in a note must still appear in the original tool output.
+
 ## 0.2.1 — 2026-11-11
 
 ### Fixed
