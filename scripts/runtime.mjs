@@ -47,20 +47,14 @@ export async function downloadRuntime(platform, destination) {
       throw new Error(`Node checksum mismatch: ${filename}`)
     const archive = join(temporary, filename)
     await writeFile(archive, data)
-    if (windows && process.platform === "win32") {
-      const quote = (value) => `'${value.replaceAll("'", "''")}'`
-      execFileSync(
-        "powershell.exe",
-        [
-          "-NoProfile",
-          "-NonInteractive",
-          "-Command",
-          `Expand-Archive -LiteralPath ${quote(archive)} -DestinationPath ${quote(temporary)}`,
-        ],
-        { stdio: "pipe" },
-      )
-    } else if (windows) execFileSync("unzip", ["-q", archive, "-d", temporary], { stdio: "pipe" })
-    else execFileSync("tar", ["-xzf", archive, "-C", temporary], { stdio: "pipe" })
+    const members = [`${name}/${windows ? "node.exe" : "bin/node"}`, `${name}/LICENSE`]
+    if (windows && process.platform !== "win32")
+      execFileSync("unzip", ["-q", archive, ...members, "-d", temporary], { stdio: "pipe" })
+    else {
+      // Windows ships bsdtar, which accepts both ZIP and tar.gz. Skip the npm tree.
+      const tar = process.platform === "win32" ? "tar.exe" : "tar"
+      execFileSync(tar, ["-xf", archive, "-C", temporary, ...members], { stdio: "pipe" })
+    }
     await mkdir(destination, { recursive: true })
     const node = join(destination, windows ? "node.exe" : "node")
     await copyFile(join(temporary, name, windows ? "node.exe" : "bin/node"), node)
