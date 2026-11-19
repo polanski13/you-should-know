@@ -5,7 +5,10 @@ import type { Observation, ObservationResult } from "../src/core/types.js"
 
 const episodeSchema = z
   .object({
-    id: z.string().regex(/^[a-z0-9-]+$/),
+    id: z
+      .string()
+      .max(240)
+      .regex(/^[a-z0-9-]+$/),
     split: z.enum(["dev", "holdout"]),
     language: z.enum(["en", "ru", "zh"]),
     user: z.string().min(1),

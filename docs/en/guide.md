@@ -96,12 +96,13 @@ Precedence: defaults → user configuration → project observer settings → Op
 | `timeoutMs`           | `45000`  | Integer, 1,000–180,000                                      |
 | `maxContextChars`     | `40000`  | Integer, 2,000–120,000                                      |
 | `maxMessageChars`     | `6000`   | Integer, 500–20,000                                         |
+| `compactToolLogs`     | `false`  | Fold identical tool-output lines before clipping            |
 | `minConfidence`       | `0.85`   | Number, 0.5–1; model-reported, not a calibrated probability |
 | `retentionDays`       | `30`     | Integer, 1–365                                              |
 
 The character budget bounds message text. The request also includes instructions, JSON structure, recent note summaries, and known topics. It is not a token or money cap.
 
-The optional setting `compactToolLogs: true` folds runs of identical lines in tool output of at least 2,000 characters before applying the message limit. It keeps one original line and its occurrence count. It is off by default.
+For tool messages of at least 2,000 characters, `compactToolLogs` folds a run of three or more identical nonblank lines when one line and its occurrence count take less space. The observer checks citations against the source text.
 
 ## Providers
 
@@ -182,7 +183,7 @@ Codex hooks must be enabled, for example with `codex --enable hooks`. A short tu
 
 If a hook sees the count jump from five to seven, it can run the check due at six. Further events in the same six-step window share that check.
 
-The first hook scans the transcript to find the current goal and count tool results. Subsequent hooks resume near the last 2 MB and read appended data. A long turn retains its user message even when it falls outside that window. The local checkpoint stores byte offsets, hashes, a turn ID and counters. A file replacement triggers a fresh scan. If a single JSONL record exceeds 8 MB, the hook waits for the next readable user message before attributing later results.
+The first hook scans the transcript to find the current goal and count tool results. Subsequent hooks parse about the last 2 MB plus appended records. When the file grows they also hash the older prefix to detect in-place edits. A long turn retains its user message even when it falls outside that window. The local checkpoint stores byte offsets, hashes, a turn ID and counters. A file replacement triggers a fresh scan. If a single JSONL record exceeds 8 MB, the hook waits for the next readable user message before attributing later results.
 
 Background output does not inject instructions into the working agent. Claude's asynchronous hooks do not surface `systemMessage` directly, so delivery happens at the next prompt. Use `ysk watch` to see notes sooner. The actual display of hook messages depends on the host interface.
 
@@ -221,7 +222,7 @@ MCP does not automatically subscribe to another client's conversation. Its clien
 
 ## Storage and data flow
 
-To measure observer usage locally, set `YSK_USAGE_LOG` to an absolute file path in an existing writable directory in the host's environment. Each completed provider attempt appends one JSON line with its outcome, elapsed time, model when known, and hashed project, session and turn identifiers. HTTP and Codex include token counts when reported. OpenCode 2.2 exposes only response text. Missing counts mean unknown. Cache reads and writes are subsets of total input. Anthropic also reports ordinary input and, when available, writes by TTL. The file contains no conversation text. The person enabling it controls its retention.
+To measure observer usage locally, set `YSK_USAGE_LOG` to an absolute file path in an existing writable directory in the host's environment. Each completed provider attempt appends one JSON line with its outcome, elapsed time, model when known, and hashed project, session and turn identifiers. HTTP and Codex include token counts when reported. OpenCode 2.2 exposes only response text. Missing counts mean unknown. Cache reads and writes are subsets of total input. Anthropic also reports ordinary input and, when available, writes by TTL. The file contains no conversation text. The person enabling it controls its retention. On POSIX the logger restricts its file to the owner, including when appending to an existing file.
 
 ```text
 Host conversation

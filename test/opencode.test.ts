@@ -21,6 +21,7 @@ test(
     const changed = deferred<void>()
     let notifications = 0
     let lookups = 0
+    let generations = 0
     let cleanup: (() => Promise<void>) | undefined
     try {
       const ctx = {
@@ -55,6 +56,7 @@ test(
               assert.deepEqual(input.model, { id: "fixture", providerID: "fixture" })
               assert.ok(input.prompt.includes(observation.messages[0]!.text))
               assert.equal("tools" in input, false)
+              generations++
               started.resolve(options.signal)
               return new Promise(() => {})
             },
@@ -74,9 +76,11 @@ test(
       assert.equal(hooks.get("context")!(context), undefined)
       await new Promise<void>((resolve) => setImmediate(resolve))
       assert.equal(lookups, 1)
+      assert.equal(generations, 0)
       assert.equal(hooks.get("context")!(context), undefined)
       const signal = await started.promise
       assert.equal(lookups, 2)
+      assert.equal(generations, 1)
       const aborted = new Promise<void>((resolve) =>
         signal.addEventListener("abort", () => resolve(), { once: true }),
       )
