@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { comparable, digest, prepareContext, redact, topicKey } from "./context.js"
+import { comparable, digest, prepareContext, redact, topicKey, truncationLabel } from "./context.js"
 import type { ObserverConfig } from "./config.js"
 import { makePrompt, modelResponseSchema, observerInstructions } from "./prompt.js"
 import { prune } from "./store.js"
@@ -62,6 +62,7 @@ function grounded(
       const message = messages.find((item) => item.id === evidence.messageId)
       if (!message?.text.includes(evidence.quote)) return false
       if (!compactedSources || message.role !== "tool") return true
+      if (evidence.quote.includes(truncationLabel)) return false
       // A repetition marker describes the rendering. It cannot substantiate a note.
       const original = compactedSources.find((item) => item.id === message.id)
       return original !== undefined && redact(original.text).includes(evidence.quote)

@@ -1,6 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import { Observer } from "../src/core/observer.js"
+import { adapterText } from "../src/adapters/messages.js"
 import { digest, prepareContext, redact } from "../src/core/context.js"
 import { config, deferred, finding, MemoryStore, observation, provider } from "./helpers.js"
 import type { ModelRequest, ModelResponse } from "../src/core/types.js"
@@ -444,4 +445,21 @@ test("formatting added to compact logs cannot serve as evidence", async () => {
     assert.equal(result.status, expected)
     if (result.status === "quiet") assert.equal(result.reason, "unsubstantiated")
   }
+})
+
+test("an adapter truncation marker is not tool evidence for compact logs", async () => {
+  const text = adapterText("ordinary output\n".repeat(9_000) + "Final result.")
+  assert.ok(text.includes("[...truncated...]"))
+  const input = {
+    ...observation,
+    messages: [...observation.messages, { id: "log", role: "tool" as const, text }],
+  }
+  const observer = new Observer(new MemoryStore(), { ...config, compactToolLogs: true })
+  assert.deepEqual(
+    await observer.observe(
+      input,
+      provider({ ...finding, evidence: [{ messageId: "log", quote: "[...truncated...]" }] }),
+    ),
+    { status: "quiet", reason: "unsubstantiated" },
+  )
 })

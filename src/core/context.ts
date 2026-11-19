@@ -41,9 +41,11 @@ export function comparable(text: string): string {
   return text.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase("en")
 }
 
+export const truncationLabel = "[...truncated...]"
+
 export function boundedText(text: string, limit: number): string {
   if (text.length <= limit) return text
-  const marker = "\n[...truncated...]\n"
+  const marker = `\n${truncationLabel}\n`
   const half = Math.floor((limit - marker.length) / 2)
   return text.slice(0, half) + marker + text.slice(-half)
 }
