@@ -3,7 +3,7 @@ import { comparable, digest, prepareContext, redact, topicKey } from "./context.
 import type { ObserverConfig } from "./config.js"
 import { makePrompt, modelResponseSchema, observerInstructions } from "./prompt.js"
 import { prune } from "./store.js"
-import type { SessionState, State, StateStore } from "./store.js"
+import type { SessionState, State, StateStore, TranscriptCursor } from "./store.js"
 import { observationSchema, responseSchema } from "./types.js"
 import type { UsageSink } from "./usage-log.js"
 import type {
@@ -119,7 +119,7 @@ export class Observer {
     raw: Observation,
     provider: ModelProvider,
     manual = false,
-    hook?: { promptId?: string },
+    hook?: { promptId?: string; cursor?: TranscriptCursor; previousFingerprint?: string },
   ): Promise<ObservationResult> {
     if (this.closed) return { status: "skipped", reason: "disposed" }
     const input = observationSchema.parse(raw)
@@ -132,12 +132,21 @@ export class Observer {
       prune(state, now, this.config.retentionDays)
       const skip = (reason: string) => ({ status: "skipped", reason }) as const
       if (hook) {
-        const active = state.sessions[digest(input.sessionId)]?.activeHookPrompt
+        const saved = state.sessions[digest(input.sessionId)]
+        const active = saved?.activeHookPrompt
         // null marks SessionEnd. Undefined also supports hosts without prompt IDs.
         if (active !== undefined && active !== hook.promptId) return skip("stale")
+        const fingerprint = saved?.transcript?.fingerprint
+        if (
+          hook.cursor &&
+          fingerprint !== hook.previousFingerprint &&
+          fingerprint !== hook.cursor.fingerprint
+        )
+          return skip("transcript_changed")
         this.activateTurn(input.sessionId, input.turnId)
       }
       const session = sessionFor(state, input, now)
+      if (hook?.cursor) session.transcript = hook.cursor
       if (messages.length < 2) return skip("insufficient_context")
       if (!this.config.enabled || state.paused) return skip("paused")
       if (session.lease && session.lease.until > now) return skip("in_flight")

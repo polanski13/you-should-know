@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { cleanText } from "../core/context.js"
+import { cleanText, digest } from "../core/context.js"
 import { createRuntime } from "../runtime.js"
 import type { Runtime } from "../runtime.js"
 import { readTranscript } from "./transcript.js"
@@ -48,27 +48,32 @@ export async function handleHook(
   }
   if (!new Set(["PostToolUse", "Stop"]).has(input.hook_event_name) || !input.transcript_path)
     return {}
-  const transcript = await readTranscript(input.transcript_path)
-  if (
-    input.turn_id &&
-    transcript.turnId &&
-    options.host === "codex" &&
-    transcript.turnId !== input.turn_id
-  )
-    return {}
-  const turnId = input.turn_id ?? transcript.turnId
-  if (!turnId) return {}
-  await runtime.observer.observe(
-    {
-      host: options.host,
-      sessionId: input.session_id,
-      turnId,
-      step: transcript.steps,
-      messages: transcript.messages,
-    },
-    runtime.provider,
-    false,
-    { promptId },
-  )
+  const key = digest(input.session_id)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const previous = await runtime.store.transact((state) => state.sessions[key]?.transcript)
+    const transcript = await readTranscript(input.transcript_path, previous)
+    if (
+      options.host === "codex" &&
+      input.turn_id &&
+      transcript.turnId &&
+      transcript.turnId !== input.turn_id
+    )
+      return {}
+    const turnId = input.turn_id ?? transcript.turnId
+    if (!turnId) return {}
+    const result = await runtime.observer.observe(
+      {
+        host: options.host,
+        sessionId: input.session_id,
+        turnId,
+        step: transcript.steps,
+        messages: transcript.messages,
+      },
+      runtime.provider,
+      false,
+      { promptId, cursor: transcript.cursor, previousFingerprint: previous?.fingerprint },
+    )
+    if (result.status !== "skipped" || result.reason !== "transcript_changed") break
+  }
   return {}
 }

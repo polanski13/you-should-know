@@ -180,7 +180,7 @@ Codex hooks must be enabled, for example with `codex --enable hooks`. A short tu
 
 If a hook sees the count jump from five to seven, it can run the check due at six. Further events in the same six-step window share that check.
 
-Hooks read the last 2 MB of the transcript. Within that window the observer keeps the latest visible user message and both ends of long text results. If the user's message is outside the window, the check is skipped.
+The first hook scans the transcript to find the current goal and count tool results. Subsequent hooks resume near the last 2 MB and read appended data. A long turn retains its user message even when it falls outside that window. The local checkpoint stores byte offsets, hashes, a turn ID and counters. A file replacement triggers a fresh scan. If a single JSONL record exceeds 8 MB, the hook waits for the next readable user message before attributing later results.
 
 Background output does not inject instructions into the working agent. Claude's asynchronous hooks do not surface `systemMessage` directly, so delivery happens at the next prompt. Use `ysk watch` to see notes sooner. The actual display of hook messages depends on the host interface.
 

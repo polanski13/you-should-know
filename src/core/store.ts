@@ -7,9 +7,23 @@ import { isErrno } from "./config.js"
 import { digest } from "./context.js"
 import { noteSchema } from "./types.js"
 
+const byteOffset = z.number().int().nonnegative()
+const transcriptCursorSchema = z.object({
+  file: z.string(),
+  size: byteOffset,
+  offset: byteOffset,
+  fingerprint: z.string(),
+  modified: z.number(),
+  steps: byteOffset,
+  turnId: z.string().optional(),
+  user: z.object({ offset: byteOffset, length: byteOffset, hash: z.string() }).optional(),
+})
+export type TranscriptCursor = z.infer<typeof transcriptCursorSchema>
+
 const sessionSchema = z.object({
   turnId: z.string(),
   activeHookPrompt: z.string().nullable().optional(),
+  transcript: transcriptCursorSchema.optional(),
   touchedAt: z.number(),
   checks: z.number().int().nonnegative().default(0),
   lastCheckAt: z.number().default(0),
