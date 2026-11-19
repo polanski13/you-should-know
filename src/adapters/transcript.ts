@@ -61,7 +61,7 @@ function decode(line: string, offset: number): Event {
       ? entry.uuid
       : typeof message.id === "string"
         ? message.id
-        : digest(`${role}:${text}:${String(entry.timestamp ?? offset)}`).slice(0, 24)
+        : digest(`${role}:${offset}:${String(entry.timestamp ?? "")}:${text}`).slice(0, 24)
   ).slice(0, 240)
   return {
     message: { id, role: role as ContextMessage["role"], text },

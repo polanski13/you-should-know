@@ -168,3 +168,45 @@ test("a native Stop payload supplies the final text once for its own prompt", as
   assert.equal(captured.length, 2)
   assert.equal(captured[1]!.split(stop.last_assistant_message).length - 1, 1)
 })
+test("identical parallel results at the same timestamp still reach the observer", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "ysk-parallel-outputs-"))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const path = join(dir, "chat.jsonl")
+  const config = join(dir, "config.json")
+  await writeFile(config, JSON.stringify({ observer: { minSteps: 2 } }))
+  const runtime = await createRuntime(dir, config, { YSK_DATA_DIR: join(dir, "state") })
+  let calls = 0
+  runtime.provider = provider(null, () => calls++)
+  const timestamp = "2026-05-10T10:00:00.000Z"
+  const output = (call_id: string) =>
+    line({
+      type: "response_item",
+      timestamp,
+      payload: { type: "function_call_output", call_id, output: "Finished" },
+    })
+  await writeFile(
+    path,
+    line({ type: "turn_context", payload: { turn_id: "turn" } }) +
+      line({
+        type: "response_item",
+        timestamp,
+        payload: { role: "user", content: "Check both jobs" },
+      }) +
+      output("one") +
+      output("two"),
+  )
+  const first = await readTranscript(path)
+  assert.equal(new Set(first.messages.map((m) => m.id)).size, 3)
+  assert.deepEqual((await readTranscript(path, first.cursor)).messages, first.messages)
+  await handleHook(
+    {
+      session_id: "s",
+      turn_id: "turn",
+      cwd: dir,
+      transcript_path: path,
+      hook_event_name: "Stop",
+    },
+    { host: "codex", runtime },
+  )
+  assert.equal(calls, 1)
+})
