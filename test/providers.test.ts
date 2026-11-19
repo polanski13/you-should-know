@@ -8,7 +8,7 @@ import { CodexProvider, observerCodexConfig } from "../src/providers/codex.js"
 import { HttpProvider } from "../src/providers/http.js"
 import { providerConfigSchema } from "../src/core/config.js"
 import { modelResponseSchema } from "../src/core/prompt.js"
-import type { ModelRequest } from "../src/core/types.js"
+import type { ModelRequest, ModelUsage } from "../src/core/types.js"
 import { Observer } from "../src/core/observer.js"
 import { config, MemoryStore, observation } from "./helpers.js"
 
@@ -65,17 +65,20 @@ test("Codex cancellation terminates a waiting app-server", async () => {
 })
 
 test("an unavailable configured model returns an actionable reason without provider text", async () => {
-  const provider = new CodexProvider({
-    executable: process.execPath,
-    args: [fixture],
-    env: { MOCK_CODEX_MODE: "missing-model" },
-    model: "unavailable-fixture",
-  })
-  const observer = new Observer(new MemoryStore(), config)
-  assert.deepEqual(await observer.observe(observation, provider), {
-    status: "error",
-    reason: "model_unavailable",
-  })
+  for (const [mode, reason] of [
+    ["missing-model", "model_unavailable"],
+    ["unavailable-model-text", "model_unavailable"],
+    ["service-unavailable", "provider_error"],
+  ] as const) {
+    const provider = new CodexProvider({
+      executable: process.execPath,
+      args: [fixture],
+      env: { MOCK_CODEX_MODE: mode },
+      model: "unavailable-fixture",
+    })
+    const observer = new Observer(new MemoryStore(), config)
+    assert.deepEqual(await observer.observe(observation, provider), { status: "error", reason })
+  }
 })
 
 test("Codex disables every configured MCP server and recursive observation", () => {
@@ -242,4 +245,32 @@ test("a partial process environment inherits the native schema flag", (t) => {
     new CodexProvider({ env: { YSK_CODEX_NATIVE_SCHEMA_ONLY: "0" } }).nativeOutputSchemaOnly,
     false,
   )
+})
+test("the native-schema flag preserves the HTTP prompt and partial billing breakdown", async () => {
+  let sawSchema = false
+  const http = new HttpProvider(
+    providerConfigSchema.parse({ type: "openai-compatible", model: "fixture" }),
+    { OPENAI_API_KEY: "fixture", YSK_CODEX_NATIVE_SCHEMA_ONLY: "1" },
+    async (_input, init) => {
+      const body = JSON.parse(String(init?.body))
+      sawSchema = body.messages[1].content.includes("\n\nResponse schema:\n")
+      return Response.json({
+        choices: [{ message: { content: '{"note":null}' } }],
+        usage: {
+          prompt_tokens: 120,
+          completion_tokens: 8,
+          prompt_tokens_details: { cached_tokens: 80 },
+        },
+      })
+    },
+  )
+  let billed: ModelUsage | undefined
+  const observer = new Observer(new MemoryStore(), config, Date.now, async (e) => {
+    billed = e.usage
+  })
+  assert.equal((await observer.observe(observation, http)).status, "quiet")
+  assert.equal(sawSchema, true)
+  assert.equal(billed?.unclassifiedInputTokens, 40)
+  assert.equal(billed?.cachedInputTokens, 80)
+  assert.equal(billed?.uncachedInputTokens, undefined)
 })

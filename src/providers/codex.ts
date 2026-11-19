@@ -175,7 +175,9 @@ async function runTurn(
         if (
           turn.status === "failed" &&
           typeof message === "string" &&
-          /\bmodel_not_found\b/i.test(message)
+          /\bmodel_not_found\b|\bmodel(?:\s+[`'"][^`'"\n]{1,160}[`'"])?\s+(?:is (?:unavailable|not (?:supported|available|found))|does not exist)\b/i.test(
+            message,
+          )
         )
           reject(new ModelUnavailableError())
         else if (turn.status !== "completed" || !finalText)

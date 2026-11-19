@@ -44,7 +44,7 @@ for await (const line of lines) {
     }
     send({ id: message.id, result: { turn: { id: "turn" } } })
     if (mode === "hang") continue
-    if (mode === "missing-model") {
+    if (["missing-model", "unavailable-model-text", "service-unavailable"].includes(mode)) {
       send({
         method: "turn/completed",
         params: {
@@ -52,7 +52,13 @@ for await (const line of lines) {
           turn: {
             status: "failed",
             error: {
-              message: 'HTTP 400: {"code":"model_not_found","message":"private diagnostic"}',
+              codexErrorInfo: "other",
+              message:
+                mode === "missing-model"
+                  ? 'HTTP 400: {"code":"model_not_found","message":"private diagnostic"}'
+                  : mode === "unavailable-model-text"
+                    ? "The selected model is unavailable."
+                    : "The upstream service is unavailable.",
             },
           },
         },

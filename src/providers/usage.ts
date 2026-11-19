@@ -16,18 +16,19 @@ export function inclusiveUsage(
   if (inputTokens === undefined && outputTokens === undefined) return undefined
   const cachedInputTokens = count(read)
   const cacheWriteInputTokens = count(write)
-  const uncached =
-    inputTokens !== undefined &&
-    cachedInputTokens !== undefined &&
-    cacheWriteInputTokens !== undefined
-      ? inputTokens - cachedInputTokens - cacheWriteInputTokens
-      : undefined
+  const remainder =
+    inputTokens === undefined
+      ? undefined
+      : inputTokens - (cachedInputTokens ?? 0) - (cacheWriteInputTokens ?? 0)
+  const validRemainder = remainder !== undefined && remainder >= 0 ? remainder : undefined
+  const splitKnown = cachedInputTokens !== undefined && cacheWriteInputTokens !== undefined
   return {
     inputTokens,
     outputTokens,
     cachedInputTokens,
     cacheWriteInputTokens,
-    uncachedInputTokens: uncached !== undefined && uncached >= 0 ? uncached : undefined,
+    uncachedInputTokens: splitKnown ? validRemainder : undefined,
+    ...(!splitKnown && validRemainder !== undefined && { unclassifiedInputTokens: validRemainder }),
   }
 }
 

@@ -74,6 +74,7 @@ export interface ModelResponse {
 export interface ModelUsage {
   inputTokens?: number
   uncachedInputTokens?: number
+  unclassifiedInputTokens?: number
   cachedInputTokens?: number
   cacheWriteInputTokens?: number
   cacheWrite5mInputTokens?: number
