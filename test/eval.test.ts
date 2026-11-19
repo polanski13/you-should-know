@@ -1,13 +1,10 @@
 import assert from "node:assert/strict"
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { test } from "node:test"
-import {
-  blindCase,
-  classify,
-  corpus,
-  gradingReferences,
-  observationFor,
-  trialsFor,
-} from "../eval/suite.js"
+import { publishGrading } from "../eval/grading.js"
+import { blindCase, classify, corpus, observationFor, trialsFor } from "../eval/suite.js"
 
 test("the corpus keeps distinct development and holdout cases in each language", async () => {
   const { episodes } = await corpus()
@@ -44,22 +41,53 @@ test("an unobserved episode never counts as a correct decision to stay quiet", (
   assert.equal(classify("note", { status: "quiet", reason: "unsubstantiated" }), "false_negative")
 })
 
-test("grading keys are private to a run and survive resuming its evaluation", async () => {
+test("blind and reference files publish together with stable private keys for each snapshot", async (t) => {
+  const out = await mkdtemp(join(tmpdir(), "ysk-grading-"))
+  t.after(() => rm(out, { recursive: true, force: true }))
   const { episodes } = await corpus()
-  const trials = trialsFor(episodes, "known-seed")
-  const legacy = trials.map((t) => JSON.stringify({ key: t.key, episode: t.episode.id })).join("\n")
-  const first = gradingReferences(trials, legacy)
-  const known = new Set(trials.map((t) => t.key))
-  const blind = new Set(first.map((r) => r.key))
-  assert.equal(blind.size, trials.length)
-  assert.ok(first.every((r) => known.has(r.caseKey) && !known.has(r.key)))
-  const saved = first
-    .toReversed()
-    .map((r) => JSON.stringify(r))
-    .join("\n")
-  assert.deepEqual(gradingReferences(trials, saved), first)
-  assert.ok(gradingReferences(trials, "").every((r) => !blind.has(r.key)))
+  const trials = trialsFor(episodes.slice(0, 4), "known-seed").map((trial) => ({
+    ...trial,
+    result: { status: "quiet", reason: "no_finding" } as const,
+  }))
+  const read = (dir: string, file: string) => readFile(join(dir, file), "utf8")
+  await writeFile(join(out, "blind.jsonl"), "previous blind file")
+  await writeFile(join(out, "references.jsonl"), "previous references")
+  const first = await publishGrading(out, trials)
+  assert.deepEqual((await readdir(first)).sort(), ["blind.jsonl", "references.jsonl"])
+  const originalBlind = await read(first, "blind.jsonl")
+  const originalRefs = await read(first, "references.jsonl")
+  const blindKeys = originalBlind
+    .trim()
+    .split("\n")
+    .map((s) => JSON.parse(s).key)
+  const refs = originalRefs
+    .trim()
+    .split("\n")
+    .map((s) => JSON.parse(s))
+  assert.equal(new Set(blindKeys).size, trials.length)
+  assert.deepEqual(blindKeys, refs.map((r) => r.key).sort())
+  assert.deepEqual(
+    refs.map((r) => r.caseKey),
+    trials.map((t) => t.key),
+  )
+  assert.ok(trials.every((t) => !blindKeys.includes(t.key)))
+  assert.equal(await publishGrading(out, trials), first)
+  const other = await publishGrading(join(out, "independent"), trials)
+  assert.notEqual(other, first)
+  const otherRefs = await read(other, "references.jsonl")
+  assert.ok(blindKeys.every((key) => !otherRefs.includes(key)))
+  const next = await publishGrading(
+    out,
+    trials.map((trial) => ({ ...trial, result: { status: "error", reason: "timeout" } })),
+  )
+  assert.notEqual(next, first)
+  assert.deepEqual((await readdir(next)).sort(), ["blind.jsonl", "references.jsonl"])
+  assert.equal(await read(first, "blind.jsonl"), originalBlind)
+  assert.equal(await read(first, "references.jsonl"), originalRefs)
+  assert.equal(await read(out, "blind.jsonl"), "previous blind file")
+  assert.equal(await read(out, "references.jsonl"), "previous references")
 })
+
 test("blind grading exposes the original conversation without reference labels or variant IDs", async () => {
   const { episodes } = await corpus()
   const e = episodes[0]!

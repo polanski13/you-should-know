@@ -7,14 +7,8 @@ import { emptyState } from "../src/core/store.js"
 import { observerConfigSchema } from "../src/core/config.js"
 import type { ModelUsage } from "../src/core/types.js"
 import { CodexProvider } from "../src/providers/codex.js"
-import {
-  blindCase,
-  classify,
-  corpus,
-  gradingReferences,
-  observationFor,
-  trialsFor,
-} from "./suite.js"
+import { classify, corpus, observationFor, trialsFor } from "./suite.js"
+import { publishGrading } from "./grading.js"
 import { isErrno } from "../src/core/config.js"
 
 const { values } = parseArgs({
@@ -133,25 +127,11 @@ if (!values.live) {
         return { ...record, classification: classify(t.episode.expected, record.result) }
       }),
     )
-    const referencesPath = join(out, "references.jsonl")
-    const saved = await readFile(referencesPath, "utf8").catch((error: unknown) => {
-      if (isErrno(error, "ENOENT")) return ""
-      throw error
-    })
-    const references = gradingReferences(trials, saved)
-    const blind = records
-      .map((r, i) => blindCase(references[i]!.key, trials[i]!.episode, r.result))
-      .sort((a, b) => a.key.localeCompare(b.key))
-    // Commit the private key mapping before exposing a grader file that depends on it.
-    for (const [path, rows] of [
-      [referencesPath, references],
-      [join(out, "blind.jsonl"), blind],
-    ] as const) {
-      await writeFile(path + ".tmp", rows.map((r) => JSON.stringify(r)).join("\n") + "\n", {
-        mode: 0o600,
-      })
-      await rename(path + ".tmp", path)
-    }
+    const grading = await publishGrading(
+      out,
+      trials.map((t, i) => ({ ...t, result: records[i]!.result })),
+    )
+    console.log("Grading files:", grading)
     for (const variant of ["default", "native-schema", "compact-logs"]) {
       const counts: Record<string, number> = {}
       for (const r of records.filter((r) => r.variant === variant))
