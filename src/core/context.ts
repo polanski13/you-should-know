@@ -55,10 +55,12 @@ export function prepareContext(
   const lastUser = messages.findLastIndex((message) => message.role === "user")
   if (lastUser < 0) return []
   const limit = Math.min(config.maxMessageChars, Math.floor(config.maxContextChars / 2))
-  const prepare = (message: ContextMessage): ContextMessage => ({
-    ...message,
-    text: boundedText(redact(message.text), limit),
-  })
+  const prepare = (message: ContextMessage): ContextMessage => {
+    const text = redact(message.text)
+    const selected =
+      config.compactToolLogs && message.role === "tool" ? compactRepeatedLines(text) : text
+    return { ...message, text: boundedText(selected, limit) }
+  }
   const selected = new Map<number, ContextMessage>()
   const user = prepare(messages[lastUser]!)
   selected.set(lastUser, user)
@@ -72,4 +74,24 @@ export function prepareContext(
     used += message.text.length
   }
   return [...selected.entries()].sort(([a], [b]) => a - b).map(([, message]) => message)
+}
+
+function compactRepeatedLines(text: string): string {
+  if (text.length < 2_000) return text
+  const lines = text.split("\n")
+  const output: string[] = []
+  for (let start = 0; start < lines.length;) {
+    const line = lines[start]!
+    let end = start + 1
+    while (end < lines.length && lines[end] === line) end++
+    const copies = end - start
+    const marker = `[preceding line occurs ${copies} times]`
+    if (line.trim() && copies >= 3 && marker.length + 1 < (line.length + 1) * (copies - 1)) {
+      output.push(line, marker)
+    } else {
+      for (let i = start; i < end; i++) output.push(line)
+    }
+    start = end
+  }
+  return output.join("\n")
 }

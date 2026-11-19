@@ -101,6 +101,8 @@ Precedence: defaults → user configuration → project observer settings → Op
 
 The character budget bounds message text. The request also includes instructions, JSON structure, recent note summaries, and known topics. It is not a token or money cap.
 
+The optional setting `compactToolLogs: true` folds runs of identical lines in tool output of at least 2,000 characters before applying the message limit. It keeps one original line and its occurrence count. It is off by default.
+
 ## Providers
 
 ### Native OpenCode

@@ -386,3 +386,37 @@ test("duplicate message identifiers are rejected before inference", async () => 
     /Message IDs must be unique/,
   )
 })
+
+test("optional log compaction preserves distinct lines and the position of evidence", () => {
+  const progress = "Polling the export; all worker slots are busy.\n"
+  const clue = "The receipts file is missing."
+  const goal = { id: "u", role: "user" as const, text: "Verify the export." }
+  for (const text of [
+    clue + "\n" + progress.repeat(250),
+    progress.repeat(125) + clue + "\n" + progress.repeat(125),
+    progress.repeat(250) + clue,
+  ]) {
+    const tool = { id: "t", role: "tool" as const, text }
+    const original = prepareContext([goal, tool], config)[1]!.text
+    const compact = prepareContext([goal, tool], { ...config, compactToolLogs: true })[1]!.text
+    assert.ok(compact.includes(clue))
+    assert.ok(compact.length < original.length)
+    assert.match(compact, /preceding line occurs (125|250) times/)
+    assert.equal(
+      prepareContext([goal, { ...tool, role: "assistant" }], {
+        ...config,
+        compactToolLogs: true,
+      })[1]!.text,
+      original,
+    )
+  }
+  const varied = {
+    id: "t",
+    role: "tool" as const,
+    text: Array.from({ length: 200 }, (_, i) => "Checked record " + i).join("\n"),
+  }
+  assert.deepEqual(
+    prepareContext([goal, varied], { ...config, compactToolLogs: true }),
+    prepareContext([goal, varied], config),
+  )
+})
