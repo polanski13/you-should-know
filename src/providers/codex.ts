@@ -4,6 +4,7 @@ import { join } from "node:path"
 import type { ModelProvider, ModelRequest, ModelResponse } from "../core/types.js"
 import { JsonLineClient, object } from "./json-lines.js"
 import { VERSION } from "../version.js"
+import { inclusiveUsage } from "./usage.js"
 
 const disabledFeatures = [
   "apps",
@@ -45,6 +46,9 @@ export function observerCodexConfig(mcpNames: string[]): Record<string, unknown>
 
 export class CodexProvider implements ModelProvider {
   readonly name = "codex"
+  get model(): string | undefined {
+    return this.options.model
+  }
 
   constructor(
     private readonly options: {
@@ -99,7 +103,9 @@ export class CodexProvider implements ModelProvider {
       const threadId = object(started.thread).id
       if (typeof threadId !== "string" || object(started.sandbox).type !== "readOnly")
         throw new Error("Codex did not establish an isolated read-only thread")
-      return await runTurn(client, threadId, request)
+      const response = await runTurn(client, threadId, request)
+      const model = typeof started.model === "string" ? started.model : this.model
+      return model ? { ...response, model } : response
     } finally {
       client?.close()
       await rm(directory, { recursive: true, force: true }).catch(() => undefined)
@@ -113,6 +119,7 @@ async function runTurn(
   request: ModelRequest,
 ): Promise<ModelResponse> {
   let finalText = ""
+  let usage: ModelResponse["usage"]
   let unsubscribe = () => {}
   const result = new Promise<ModelResponse>((resolve, reject) => {
     unsubscribe = client.subscribe((method, raw) => {
@@ -122,6 +129,16 @@ async function runTurn(
         return
       }
       if (params.threadId !== threadId) return
+      if (method === "thread/tokenUsage/updated") {
+        // Each observation starts a fresh thread. Totals also cover internal continuations.
+        const counts = object(object(params.tokenUsage).total)
+        usage = inclusiveUsage(
+          counts.inputTokens,
+          counts.outputTokens,
+          counts.cachedInputTokens,
+          counts.cacheWriteInputTokens,
+        )
+      }
       if (method === "item/started" || method === "item/completed") {
         const item = object(params.item)
         if (!new Set(["userMessage", "agentMessage", "reasoning"]).has(String(item.type))) {
@@ -140,7 +157,7 @@ async function runTurn(
         const turn = object(params.turn)
         if (turn.status !== "completed" || !finalText)
           reject(new Error("Codex did not complete a text-only observation"))
-        else resolve({ text: finalText })
+        else resolve(usage ? { text: finalText, usage } : { text: finalText })
       }
     })
   })

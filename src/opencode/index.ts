@@ -5,16 +5,22 @@ import { digest } from "../core/context.js"
 import { Observer } from "../core/observer.js"
 import { FileStore } from "../core/store.js"
 import { YouShouldKnow } from "./rpc.js"
+import { localUsageLog } from "../core/usage-log.js"
 
 export default {
   id: "you-should-know",
   async setup(ctx) {
     const config = await loadConfig({ workspace: ctx.location.directory })
     const options = observerOverrides(ctx.options)
-    const observer = new Observer(await FileStore.create(dataDirectory(), ctx.location.directory), {
-      ...config.observer,
-      ...options,
-    })
+    const observer = new Observer(
+      await FileStore.create(dataDirectory(), ctx.location.directory),
+      {
+        ...config.observer,
+        ...options,
+      },
+      Date.now,
+      localUsageLog(process.env.YSK_USAGE_LOG, ctx.location.directory),
+    )
     const turns = new Map<string, { id: string; step: number }>()
     const roots = new Map<string, Promise<boolean>>()
     const jobs = new Set<Promise<unknown>>()
@@ -82,6 +88,7 @@ export default {
             },
             {
               name: "opencode",
+              model: event.model.id,
               complete: async (request) => {
                 const response = await ctx.experimental.generate.text(
                   {

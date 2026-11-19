@@ -5,11 +5,13 @@ import { makePrompt, modelResponseSchema, observerInstructions } from "./prompt.
 import { prune } from "./store.js"
 import type { SessionState, State, StateStore } from "./store.js"
 import { observationSchema, responseSchema } from "./types.js"
+import type { UsageSink } from "./usage-log.js"
 import type {
   ContextMessage,
   Feedback,
   Finding,
   ModelProvider,
+  ModelResponse,
   Note,
   Observation,
   ObservationResult,
@@ -67,6 +69,7 @@ export class Observer {
     readonly store: StateStore,
     readonly config: ObserverConfig,
     private readonly now: () => number = Date.now,
+    private readonly recordUsage?: UsageSink,
   ) {}
 
   async beginTurn(sessionId: string, turnId: string): Promise<void> {
@@ -164,6 +167,9 @@ export class Observer {
     const controller = new AbortController()
     const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(this.config.timeoutMs)])
     this.running.set(input.sessionId, { turnId: input.turnId, controller })
+    const startedAt = this.now()
+    let usage: ModelResponse["usage"]
+    let model = provider.model
     let outcome: ObservationResult
     let finding: Finding | null = null
     try {
@@ -180,6 +186,8 @@ export class Observer {
         maxOutputTokens: 1_200,
       })
       const response = await abortable(request, signal)
+      usage = response.usage
+      model = response.model ?? model
       if (response.text.length > 32_000) throw new InvalidResponse()
       const parsed = responseSchema.safeParse(parseResponse(response.text))
       if (!parsed.success) throw new InvalidResponse()
@@ -207,7 +215,7 @@ export class Observer {
       if (this.running.get(input.sessionId)?.controller === controller)
         this.running.delete(input.sessionId)
     }
-    return this.store.transact((state) => {
+    const result = await this.store.transact<ObservationResult>((state) => {
       const session = state.sessions[digest(input.sessionId)]
       if (session?.lease?.id !== lease || session.turnId !== input.turnId)
         return { status: "skipped", reason: "stale" }
@@ -241,6 +249,21 @@ export class Observer {
       session.offeredTurn = input.turnId
       return { status: "shown", note }
     })
+    if (this.recordUsage) {
+      await this.recordUsage({
+        startedAt,
+        durationMs: this.now() - startedAt,
+        host: input.host,
+        sessionId: input.sessionId,
+        turnId: input.turnId,
+        provider: provider.name,
+        model,
+        status: result.status,
+        reason: result.status === "shown" ? undefined : result.reason,
+        usage,
+      }).catch(() => undefined)
+    }
+    return result
   }
 
   async notes(sessionId?: string): Promise<Note[]> {

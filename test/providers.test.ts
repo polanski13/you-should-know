@@ -62,7 +62,17 @@ test("OpenAI-compatible provider sends bounded text-only JSON requests", async (
     for await (const chunk of req) chunks.push(chunk)
     received = JSON.parse(Buffer.concat(chunks).toString()) as Record<string, unknown>
     res.writeHead(200, { "content-type": "application/json" })
-    res.end(JSON.stringify({ choices: [{ message: { content: '{"note":null}' } }] }))
+    res.end(
+      JSON.stringify({
+        choices: [{ message: { content: '{"note":null}' } }],
+        model: "served-model",
+        usage: {
+          prompt_tokens: 120,
+          completion_tokens: 8,
+          prompt_tokens_details: { cached_tokens: 80, cache_write_tokens: 12 },
+        },
+      }),
+    )
   })
   server.listen(0, "127.0.0.1")
   await once(server, "listening")
@@ -76,6 +86,14 @@ test("OpenAI-compatible provider sends bounded text-only JSON requests", async (
       request(),
     )
     assert.equal(result.text, '{"note":null}')
+    assert.equal(result.model, "served-model")
+    assert.deepEqual(result.usage, {
+      inputTokens: 120,
+      outputTokens: 8,
+      cachedInputTokens: 80,
+      cacheWriteInputTokens: 12,
+      uncachedInputTokens: 28,
+    })
     assert.equal(received.tools, undefined)
     assert.equal(received.max_tokens, 1_200)
     assert.deepEqual(received.response_format, { type: "json_object" })
@@ -124,11 +142,44 @@ test("Anthropic uses the documented Messages API with no tools", async () => {
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>
     assert.equal(body.tools, undefined)
     assert.equal(body.max_tokens, 1_200)
-    return Response.json({ content: [{ type: "text", text: '{"note":null}' }] })
+    return Response.json({
+      content: [{ type: "text", text: '{"note":null}' }],
+      usage: {
+        input_tokens: 28,
+        output_tokens: 8,
+        cache_read_input_tokens: 80,
+        cache_creation_input_tokens: 12,
+        cache_creation: { ephemeral_5m_input_tokens: 5, ephemeral_1h_input_tokens: 7 },
+      },
+    })
   }
-  assert.equal(
-    (await new HttpProvider(config, { ANTHROPIC_API_KEY: "fixture" }, fetcher).complete(request()))
-      .text,
-    '{"note":null}',
+  const result = await new HttpProvider(config, { ANTHROPIC_API_KEY: "fixture" }, fetcher).complete(
+    request(),
   )
+  assert.equal(result.text, '{"note":null}')
+  assert.deepEqual(result.usage, {
+    inputTokens: 120,
+    outputTokens: 8,
+    cachedInputTokens: 80,
+    cacheWriteInputTokens: 12,
+    uncachedInputTokens: 28,
+    cacheWrite5mInputTokens: 5,
+    cacheWrite1hInputTokens: 7,
+  })
+})
+
+test("Codex reports the total for this observation and ignores other threads", async () => {
+  const provider = new CodexProvider({
+    executable: process.execPath,
+    args: [fixture],
+    env: { MOCK_CODEX_MODE: "usage" },
+  })
+  const result = await provider.complete(request())
+  assert.deepEqual(result.usage, {
+    inputTokens: 120,
+    outputTokens: 8,
+    cachedInputTokens: 80,
+    cacheWriteInputTokens: 12,
+    uncachedInputTokens: 28,
+  })
 })

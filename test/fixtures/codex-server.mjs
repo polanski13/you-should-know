@@ -36,6 +36,31 @@ for await (const line of lines) {
   if (message.method === "turn/start") {
     send({ id: message.id, result: { turn: { id: "turn" } } })
     if (mode === "hang") continue
+    if (mode === "usage") {
+      for (const threadId of ["observer", "other"]) {
+        send({
+          method: "thread/tokenUsage/updated",
+          params: {
+            threadId,
+            turnId: "turn",
+            tokenUsage: {
+              total: {
+                inputTokens: threadId === "observer" ? 120 : 999,
+                outputTokens: 8,
+                cachedInputTokens: 80,
+                cacheWriteInputTokens: 12,
+              },
+              last: {
+                inputTokens: 5,
+                outputTokens: 1,
+                cachedInputTokens: 0,
+                cacheWriteInputTokens: 0,
+              },
+            },
+          },
+        })
+      }
+    }
     if (mode === "action") {
       send({
         id: "approval",

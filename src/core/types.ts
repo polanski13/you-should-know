@@ -67,11 +67,23 @@ export interface ModelRequest {
 
 export interface ModelResponse {
   text: string
-  usage?: { inputTokens?: number; outputTokens?: number }
+  model?: string
+  usage?: ModelUsage
+}
+
+export interface ModelUsage {
+  inputTokens?: number
+  uncachedInputTokens?: number
+  cachedInputTokens?: number
+  cacheWriteInputTokens?: number
+  cacheWrite5mInputTokens?: number
+  cacheWrite1hInputTokens?: number
+  outputTokens?: number
 }
 
 export interface ModelProvider {
   readonly name: string
+  readonly model?: string
   complete(request: ModelRequest): Promise<ModelResponse>
 }
 

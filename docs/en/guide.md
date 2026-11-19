@@ -209,6 +209,8 @@ MCP does not automatically subscribe to another client's conversation. Its clien
 
 ## Storage and data flow
 
+To measure observer usage locally, set `YSK_USAGE_LOG` to an absolute file path in an existing writable directory in the host's environment. Each completed provider attempt appends one JSON line with its outcome, elapsed time, model when known, and hashed project, session and turn identifiers. HTTP and Codex include token counts when reported. OpenCode 2.2 exposes only response text. Missing counts mean unknown. Cache reads and writes are subsets of total input. Anthropic also reports ordinary input and, when available, writes by TTL. The file contains no conversation text. The person enabling it controls its retention.
+
 ```text
 Host conversation
   → normalize text and bound context
