@@ -112,9 +112,9 @@ export class CodexProvider implements ModelProvider {
       const threadId = object(started.thread).id
       if (typeof threadId !== "string" || object(started.sandbox).type !== "readOnly")
         throw new Error("Codex did not establish an isolated read-only thread")
-      const response = await runTurn(client, threadId, request)
-      const model =
-        response.model ?? (typeof started.model === "string" ? started.model : this.model)
+      const selectedModel = typeof started.model === "string" ? started.model : this.model
+      const response = await runTurn(client, threadId, request, selectedModel)
+      const model = response.model ?? selectedModel
       return model ? { ...response, model } : response
     } finally {
       client?.close()
@@ -123,10 +123,23 @@ export class CodexProvider implements ModelProvider {
   }
 }
 
+function isModelUnavailable(message: string, selectedModel: string | undefined): boolean {
+  if (/\bmodel_not_found\b/i.test(message)) return true
+  const match =
+    /\bmodel(?:\s+(?:[`'"][^`'"\n]{1,160}[`'"]|([a-z0-9][a-z0-9._:/-]{0,159})))?\s+(?:is (?:unavailable|not (?:supported|available|found))|does not exist)\b/i.exec(
+      message,
+    )
+  if (!match) return false
+  const unquoted = match[1]
+  // Plain words can describe infrastructure, as in "model service is unavailable".
+  return !unquoted || unquoted === selectedModel || /[0-9._:/-]/.test(unquoted)
+}
+
 async function runTurn(
   client: JsonLineClient,
   threadId: string,
   request: ModelRequest,
+  selectedModel: string | undefined,
 ): Promise<ModelResponse> {
   let finalText = ""
   let usage: ModelResponse["usage"]
@@ -175,9 +188,7 @@ async function runTurn(
         if (
           turn.status === "failed" &&
           typeof message === "string" &&
-          /\bmodel_not_found\b|\bmodel(?:\s+[`'"][^`'"\n]{1,160}[`'"])?\s+(?:is (?:unavailable|not (?:supported|available|found))|does not exist)\b/i.test(
-            message,
-          )
+          isModelUnavailable(message, model ?? selectedModel)
         )
           reject(new ModelUnavailableError())
         else if (turn.status !== "completed" || !finalText)

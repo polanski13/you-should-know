@@ -2,6 +2,15 @@ import { createInterface } from "node:readline"
 
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`)
 const mode = process.env.MOCK_CODEX_MODE
+const failureMessages = new Map([
+  ["missing-model", 'HTTP 400: {"code":"model_not_found","message":"private diagnostic"}'],
+  ["unavailable-model-text", "The selected model is unavailable."],
+  ["unavailable-model-id", "Model gpt-5 is unavailable."],
+  ["unavailable-model-alias", "The model custom is not supported."],
+  ["unavailable-quoted-model", "The model 'another' does not exist."],
+  ["service-unavailable", "The upstream service is unavailable."],
+  ["model-service-unavailable", "The model service is unavailable."],
+])
 const lines = createInterface({ input: process.stdin })
 for await (const line of lines) {
   const message = JSON.parse(line)
@@ -44,7 +53,7 @@ for await (const line of lines) {
     }
     send({ id: message.id, result: { turn: { id: "turn" } } })
     if (mode === "hang") continue
-    if (["missing-model", "unavailable-model-text", "service-unavailable"].includes(mode)) {
+    if (failureMessages.has(mode)) {
       send({
         method: "turn/completed",
         params: {
@@ -53,12 +62,7 @@ for await (const line of lines) {
             status: "failed",
             error: {
               codexErrorInfo: "other",
-              message:
-                mode === "missing-model"
-                  ? 'HTTP 400: {"code":"model_not_found","message":"private diagnostic"}'
-                  : mode === "unavailable-model-text"
-                    ? "The selected model is unavailable."
-                    : "The upstream service is unavailable.",
+              message: failureMessages.get(mode),
             },
           },
         },

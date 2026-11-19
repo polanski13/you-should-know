@@ -68,13 +68,17 @@ test("an unavailable configured model returns an actionable reason without provi
   for (const [mode, reason] of [
     ["missing-model", "model_unavailable"],
     ["unavailable-model-text", "model_unavailable"],
+    ["unavailable-model-id", "model_unavailable"],
+    ["unavailable-model-alias", "model_unavailable"],
+    ["unavailable-quoted-model", "model_unavailable"],
     ["service-unavailable", "provider_error"],
+    ["model-service-unavailable", "provider_error"],
   ] as const) {
     const provider = new CodexProvider({
       executable: process.execPath,
       args: [fixture],
       env: { MOCK_CODEX_MODE: mode },
-      model: "unavailable-fixture",
+      model: mode === "unavailable-model-alias" ? "custom" : "unavailable-fixture",
     })
     const observer = new Observer(new MemoryStore(), config)
     assert.deepEqual(await observer.observe(observation, provider), { status: "error", reason })
