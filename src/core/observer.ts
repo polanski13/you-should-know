@@ -4,7 +4,7 @@ import type { ObserverConfig } from "./config.js"
 import { makePrompt, modelResponseSchema, observerInstructions } from "./prompt.js"
 import { prune } from "./store.js"
 import type { SessionState, State, StateStore, TranscriptCursor } from "./store.js"
-import { observationSchema, responseSchema } from "./types.js"
+import { ModelUnavailableError, observationSchema, responseSchema } from "./types.js"
 import type { UsageSink } from "./usage-log.js"
 import type {
   ContextMessage,
@@ -242,7 +242,9 @@ export class Observer {
             : "timeout"
           : error instanceof InvalidResponse || error instanceof SyntaxError
             ? "invalid_response"
-            : "provider_error",
+            : error instanceof ModelUnavailableError
+              ? "model_unavailable"
+              : "provider_error",
       }
     } finally {
       if (this.running.get(input.sessionId)?.controller === controller)

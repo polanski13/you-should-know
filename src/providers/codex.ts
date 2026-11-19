@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { ModelProvider, ModelRequest, ModelResponse } from "../core/types.js"
+import { ModelUnavailableError } from "../core/types.js"
 import { JsonLineClient, object } from "./json-lines.js"
 import { VERSION } from "../version.js"
 import { inclusiveUsage } from "./usage.js"
@@ -158,7 +159,14 @@ async function runTurn(
       }
       if (method === "turn/completed") {
         const turn = object(params.turn)
-        if (turn.status !== "completed" || !finalText)
+        const message = object(turn.error).message
+        if (
+          turn.status === "failed" &&
+          typeof message === "string" &&
+          /\bmodel_not_found\b/i.test(message)
+        )
+          reject(new ModelUnavailableError())
+        else if (turn.status !== "completed" || !finalText)
           reject(new Error("Codex did not complete a text-only observation"))
         else resolve(usage ? { text: finalText, usage } : { text: finalText })
       }

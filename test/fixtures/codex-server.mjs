@@ -44,6 +44,21 @@ for await (const line of lines) {
     }
     send({ id: message.id, result: { turn: { id: "turn" } } })
     if (mode === "hang") continue
+    if (mode === "missing-model") {
+      send({
+        method: "turn/completed",
+        params: {
+          threadId: "observer",
+          turn: {
+            status: "failed",
+            error: {
+              message: 'HTTP 400: {"code":"model_not_found","message":"private diagnostic"}',
+            },
+          },
+        },
+      })
+      continue
+    }
     if (mode === "usage") {
       for (const threadId of ["observer", "other"]) {
         send({

@@ -130,6 +130,8 @@ CLI 接受 `--config /absolute/path/config.json`。已安装的钩子使用标�
 
 额度来自配置的 Codex 账户或提供商。app-server API 对版本敏感。`ysk doctor` 检查安装版本，不执行真实推理；登录状态请使用 `codex login status` 查看。
 
+如果检查返回 `model_unavailable`，请在已登录客户端的 `/model` 列表中选择可用模型，并将其设为观察器配置的 `provider.model`。手动重试会使用该模型。
+
 要试用 Codex 的原生输出格式，可在客户端环境中设置 `YSK_CODEX_NATIVE_SCHEMA_ONLY=1`。结构定义会通过 `outputSchema` 字段发送，提示词中省去重复的文本。取消设置即可恢复默认提示词。
 
 ### OpenAI 兼容 API

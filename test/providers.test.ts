@@ -64,6 +64,19 @@ test("Codex cancellation terminates a waiting app-server", async () => {
   await assert.rejects(provider.complete({ ...request(), signal: AbortSignal.timeout(150) }))
 })
 
+test("an unavailable configured model returns an actionable reason without provider text", async () => {
+  const provider = new CodexProvider({
+    executable: process.execPath,
+    args: [fixture],
+    env: { MOCK_CODEX_MODE: "missing-model" },
+  })
+  const observer = new Observer(new MemoryStore(), config)
+  assert.deepEqual(await observer.observe(observation, provider), {
+    status: "error",
+    reason: "model_unavailable",
+  })
+})
+
 test("Codex disables every configured MCP server and recursive observation", () => {
   const config = observerCodexConfig(["one", "two"])
   assert.deepEqual(config.mcp_servers, { one: { enabled: false }, two: { enabled: false } })
