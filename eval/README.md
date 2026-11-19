@@ -1,0 +1,41 @@
+# Observer evaluation
+
+The corpus contains 60 synthetic conversations in English, Russian and Simplified Chinese. Each language has 8 cases where a note should change a decision and 12 where the observer should stay quiet. Use the 36 development cases to investigate changes. Reserve the 24 holdout cases for a subsequent comparison.
+
+## Run a comparison
+
+```sh
+npm ci
+npm run eval:observer
+npm run eval:observer -- --live --model MODEL --out ../ysk-eval --jobs 2
+```
+
+The first evaluation validates the corpus locally. A live run needs a signed-in Codex CLI and a model available to that account. A full run makes 132 independent observer requests. Both the default and native-schema variants see all 60 episodes. The compact-logs variant sees the same 12 long-log episodes as the other variants, with evidence at the beginning, middle or end. Nine have repeated lines and three have numbered lines. Each variant changes one option. Each trial has fresh observer state.
+
+Use `--split dev` or `--split holdout` to select cases and `--variant default|native-schema|compact-logs` to select one variant. A seed controls trial order independently of model sampling. Repeat the same command and output directory to resume an interrupted run. Use a new output directory after changing the code or for an independent repetition. Ordinary CI runs regression tests without contacting a model.
+
+## Read the outcome
+
+Grade `blind.jsonl` before opening `cases/`. For an expected note, require a decision-relevant consequence supported by quotes from the conversation in the user's language. Record a generic warning with the right decision but missing the decisive fact as partial. For an expected quiet result, record any displayed note as a false positive. Record skipped and failed requests separately. Keep the original labels during a comparison and document ambiguous cases for the next corpus version.
+
+Join grades to `cases/*.json` by `key` after grading. Compare identical episodes across variants. Report precise notes and unnecessary interruptions, missed consequences, missing decisions, model and token-count coverage, total price by billing type per completed episode, and p95 latency. A synthetic episode here comprises one eligible observation. Measuring the full cost of a user's completed task also requires the working agent's usage and a task outcome.
+
+## November 2026 run
+
+Codex CLI 0.162.0 served `gpt-6.1-terra` for all 132 initial trials and a further 12 compact-log trials. The model and seed were fixed across the initial comparison. The repetition followed a fix that verifies compact-log evidence against the original tool text. The private trial files contain only these synthetic cases. The variant names were hidden during qualitative grading.
+
+| Cases and variant        | Episodes | Specific notes / expected | Partial notes | False positives / quiet | Estimated USD per episode | p95 seconds |
+| ------------------------ | -------: | ------------------------: | ------------: | ----------------------: | ------------------------: | ----------: |
+| Full, default            |       60 |                     22/24 |             2 |                    6/36 |                   0.00407 |        25.3 |
+| Full, native schema      |       60 |                     22/24 |             2 |                    4/36 |                   0.00327 |        26.3 |
+| Holdout, default         |       24 |                       8/9 |             1 |                    4/15 |                   0.00413 |        25.7 |
+| Holdout, native schema   |       24 |                       8/9 |             1 |                    3/15 |                   0.00330 |        23.9 |
+| Long logs, default       |       12 |                       4/6 |             2 |                     5/6 |                   0.00644 |        25.3 |
+| Long logs, compact       |       12 |                       6/6 |             0 |                     3/6 |                   0.00301 |        27.7 |
+| Long logs, compact rerun |       12 |                       6/6 |             0 |                     2/6 |                   0.00202 |        12.4 |
+
+Every trial reached a model decision with reported usage. The native schema removed 13,700 input tokens over 60 episodes. The 12 compacted inputs used 20,460 fewer tokens than their matched defaults. Cache reads varied by trial order and repetition. Estimates use USD 1.00 per million uncached input tokens, 0.05 for cached reads and 5.00 for output. Reported cache writes were zero. [Model pricing](https://developers.openai.com/api/docs/models/gpt-6.1-terra)
+
+Two long cases show why specific evidence matters. With the full signal visible, the observer identified 61 distinct attendees among 92 connections and zero deliveries for 41 queued invitations. Some quiet labels admit a second interpretation, including a test without an explicit pass threshold and a run where sync duration and lag may differ. The original scores include these as false positives.
+
+Both options are opt-in. Before changing either default, repeat the experiment on fresh cases, have another reviewer grade the notes, and run a session-level pilot with consenting users. Track whether tasks complete, helpful or irrelevant feedback, total task cost, missed consequences, unnecessary interruptions, error rate and p95 latency. A single model run on a small synthetic holdout cannot establish those production outcomes.

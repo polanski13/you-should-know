@@ -53,6 +53,7 @@
     "build": "tsc -p tsconfig.build.json && vite build",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
+    "eval:observer": "tsx eval/run.ts",
     "test:package": "node scripts/smoke-package.mjs",
     "build:release": "npm run build && node scripts/build-release.mjs",
     "test:release": "node scripts/smoke-release.mjs",
