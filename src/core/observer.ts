@@ -44,6 +44,7 @@ function sessionFor(
       session.skip = session.ignored <= 2 ? 0 : Math.min(16, 2 ** (session.ignored - 3))
     }
     session.turnId = input.turnId
+    session.lastCadenceStep = undefined
     session.noteId = undefined
     session.lease = undefined
   }
@@ -137,10 +138,11 @@ export class Observer {
         state.checks.length >= this.config.maxChecksPerHour
       )
         return skip("budget")
-      if (!manual && (input.step < this.config.minSteps || input.step % this.config.minSteps !== 0))
-        return skip("cadence")
+      const windowStart = input.step - (input.step % this.config.minSteps)
+      if (!manual && windowStart <= (session.lastCadenceStep ?? 0)) return skip("cadence")
       if (!manual && session.checks > 0 && now - session.lastCheckAt < this.config.minIntervalMs)
         return skip("cooldown")
+      session.lastCadenceStep = Math.max(session.lastCadenceStep ?? 0, input.step)
       if (!manual && session.skip > 0) {
         session.skip--
         return skip("backoff")

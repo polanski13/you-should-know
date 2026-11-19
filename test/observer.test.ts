@@ -112,6 +112,33 @@ test("manual checks cannot bypass the project-wide hourly budget", async () => {
   assert.deepEqual(result, { status: "skipped", reason: "budget" })
 })
 
+test("coalesced events check once per crossed cadence window and reset on a new turn", async () => {
+  const store = new MemoryStore()
+  const first = new Observer(store, config)
+  const second = new Observer(store, config)
+  let calls = 0
+  const quiet = provider(null, () => calls++)
+  const input = (step: number, turnId = observation.turnId) => ({
+    ...observation,
+    step,
+    turnId,
+    messages: [
+      ...observation.messages,
+      { id: "log", role: "tool" as const, text: `snapshot ${turnId} ${step}` },
+    ],
+  })
+  assert.equal((await first.observe(input(5), quiet)).status, "skipped")
+  const results = await Promise.all([
+    first.observe(input(7), quiet),
+    second.observe(input(7), quiet),
+  ])
+  assert.equal(results.filter((r) => r.status === "quiet").length, 1)
+  assert.deepEqual(await first.observe(input(8), quiet), { status: "skipped", reason: "cadence" })
+  assert.equal((await second.observe(input(12), quiet)).status, "quiet")
+  assert.equal((await second.observe(input(6, "next"), quiet)).status, "quiet")
+  assert.equal(calls, 3)
+})
+
 test("only an explicit retry can repeat failed context and each attempt consumes budget", async () => {
   const store = new MemoryStore()
   const observer = new Observer(store, { ...config, maxChecksPerSession: 2 })

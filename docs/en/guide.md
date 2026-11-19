@@ -174,6 +174,8 @@ Uses the Messages API at `https://api.anthropic.com/v1/messages` by default, Bea
 
 Codex hooks must be enabled, for example with `codex --enable hooks`. A short turn with fewer than `minSteps` tool-result events will stay quiet, including at `Stop`. Parallel tool results count as their transcript represents them; cadence is not a count of wall-clock actions.
 
+If a hook sees the count jump from five to seven, it can run the check due at six. Further events in the same six-step window share that check.
+
 Background output does not inject instructions into the working agent. Claude's asynchronous hooks do not surface `systemMessage` directly, so delivery happens at the next prompt. Use `ysk watch` to see notes sooner. The actual display of hook messages depends on the host interface.
 
 The installer is idempotent, writes atomically, and preserves a first backup as `<config-file>.before-ysk`. It refuses malformed JSON or unexpected hook structures. Uninstall removes registrations marked `--managed-by-ysk`; it does not restore an old file over newer user changes. Hook commands use absolute paths to the runtime and CLI, including the bundled Node.js in release installations.

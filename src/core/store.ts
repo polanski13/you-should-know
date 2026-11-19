@@ -12,6 +12,7 @@ const sessionSchema = z.object({
   touchedAt: z.number(),
   checks: z.number().int().nonnegative().default(0),
   lastCheckAt: z.number().default(0),
+  lastCadenceStep: z.number().int().nonnegative().optional(),
   revision: z.string().default(""),
   lastCheckFailed: z.boolean().optional(),
   offeredTurn: z.string().optional(),
