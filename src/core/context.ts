@@ -41,6 +41,13 @@ export function comparable(text: string): string {
   return text.normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase("en")
 }
 
+export function boundedText(text: string, limit: number): string {
+  if (text.length <= limit) return text
+  const marker = "\n[...truncated...]\n"
+  const half = Math.floor((limit - marker.length) / 2)
+  return text.slice(0, half) + marker + text.slice(-half)
+}
+
 export function prepareContext(
   messages: ContextMessage[],
   config: ObserverConfig,
@@ -48,15 +55,10 @@ export function prepareContext(
   const lastUser = messages.findLastIndex((message) => message.role === "user")
   if (lastUser < 0) return []
   const limit = Math.min(config.maxMessageChars, Math.floor(config.maxContextChars / 2))
-  const prepare = (message: ContextMessage): ContextMessage => {
-    const text = redact(message.text)
-    const marker = "\n[...truncated...]\n"
-    const half = Math.floor((limit - marker.length) / 2)
-    return {
-      ...message,
-      text: text.length <= limit ? text : `${text.slice(0, half)}${marker}${text.slice(-half)}`,
-    }
-  }
+  const prepare = (message: ContextMessage): ContextMessage => ({
+    ...message,
+    text: boundedText(redact(message.text), limit),
+  })
   const selected = new Map<number, ContextMessage>()
   const user = prepare(messages[lastUser]!)
   selected.set(lastUser, user)

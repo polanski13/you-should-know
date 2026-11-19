@@ -2,7 +2,7 @@ import { open } from "node:fs/promises"
 import { digest } from "../core/context.js"
 import type { ContextMessage } from "../core/types.js"
 import { object } from "../providers/json-lines.js"
-import { textContent } from "./messages.js"
+import { adapterText, recentMessages } from "./messages.js"
 
 export interface Transcript {
   messages: ContextMessage[]
@@ -44,7 +44,7 @@ export function parseTranscript(text: string): Transcript {
       role = "tool"
       steps++
     }
-    const value = textContent(content).slice(0, 100_000)
+    const value = adapterText(content)
     if (!value.trim()) continue
     const id =
       typeof entry.uuid === "string"
@@ -62,7 +62,7 @@ export function parseTranscript(text: string): Transcript {
       text: value,
     })
   }
-  return { messages: messages.slice(-500), turnId, steps }
+  return { messages: recentMessages(messages, (m) => m.role === "user"), turnId, steps }
 }
 
 export async function readTranscript(path: string): Promise<Transcript> {

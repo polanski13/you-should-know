@@ -9,6 +9,7 @@ import { installHooks, mergeHooks } from "../src/adapters/install.js"
 import { handleHook } from "../src/adapters/hooks.js"
 import { createRuntime } from "../src/runtime.js"
 import { config, observation, provider } from "./helpers.js"
+import { prepareContext } from "../src/core/context.js"
 
 test("Codex rollout messages preserve user intent, tool results, and turn identity", () => {
   const rows = [
@@ -104,6 +105,34 @@ test("OpenCode messages extract structured tool results without images or reason
   ])
   assert.equal(result[0]?.text, '{"passed":false}')
   assert.equal(result[1]?.text, "Done")
+})
+
+test("both adapters retain the latest user and the final lines of a long tool result", () => {
+  const goal = { id: "goal", role: "user", text: "Run the suite" }
+  const noise = Array.from({ length: 500 }, (_, i) => ({
+    id: "a" + i,
+    role: "assistant",
+    text: "Step " + i,
+  }))
+  const ending = "Final result: 3 failed"
+  const log = {
+    id: "log",
+    role: "tool",
+    text: "Starting tests\n" + "line\n".repeat(24_000) + ending,
+  }
+  const messages = [goal, ...noise, log]
+  const transcript = messages
+    .map(({ id, role, text }) => JSON.stringify({ uuid: id, message: { role, content: text } }))
+    .join("\n")
+  for (const result of [normalizeMessages(messages), parseTranscript(transcript).messages]) {
+    assert.equal(result.length, 500)
+    assert.equal(result[0]?.id, goal.id)
+    const context = prepareContext(result, config)
+    assert.ok(context.some((m) => m.id === goal.id))
+    assert.ok(context.at(-1)?.text.startsWith("Starting tests"))
+    assert.ok(context.at(-1)?.text.endsWith(ending))
+    assert.ok(context.at(-1)!.text.length <= config.maxMessageChars)
+  }
 })
 
 test("hook installation is idempotent and uninstall preserves unrelated settings", () => {
