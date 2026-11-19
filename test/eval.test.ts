@@ -1,6 +1,13 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { blindCase, classify, corpus, observationFor, trialsFor } from "../eval/suite.js"
+import {
+  blindCase,
+  classify,
+  corpus,
+  gradingReferences,
+  observationFor,
+  trialsFor,
+} from "../eval/suite.js"
 
 test("the corpus keeps distinct development and holdout cases in each language", async () => {
   const { episodes } = await corpus()
@@ -35,6 +42,23 @@ test("an unobserved episode never counts as a correct decision to stay quiet", (
   assert.equal(classify("quiet", { status: "skipped", reason: "budget" }), "no_decision")
   assert.equal(classify("quiet", { status: "quiet", reason: "no_finding" }), "true_negative")
   assert.equal(classify("note", { status: "quiet", reason: "unsubstantiated" }), "false_negative")
+})
+
+test("grading keys are private to a run and survive resuming its evaluation", async () => {
+  const { episodes } = await corpus()
+  const trials = trialsFor(episodes, "known-seed")
+  const legacy = trials.map((t) => JSON.stringify({ key: t.key, episode: t.episode.id })).join("\n")
+  const first = gradingReferences(trials, legacy)
+  const known = new Set(trials.map((t) => t.key))
+  const blind = new Set(first.map((r) => r.key))
+  assert.equal(blind.size, trials.length)
+  assert.ok(first.every((r) => known.has(r.caseKey) && !known.has(r.key)))
+  const saved = first
+    .toReversed()
+    .map((r) => JSON.stringify(r))
+    .join("\n")
+  assert.deepEqual(gradingReferences(trials, saved), first)
+  assert.ok(gradingReferences(trials, "").every((r) => !blind.has(r.key)))
 })
 test("blind grading exposes the original conversation without reference labels or variant IDs", async () => {
   const { episodes } = await corpus()
