@@ -21,7 +21,7 @@ export async function createRuntime(
       store,
       config.observer,
       Date.now,
-      localUsageLog(env.YSK_USAGE_LOG, workspace),
+      localUsageLog(env.YSK_USAGE_LOG, store.project),
     ),
     provider: createProvider(config.provider, env),
   }

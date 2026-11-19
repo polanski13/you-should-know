@@ -70,13 +70,15 @@ export class FileStore implements StateStore {
   private constructor(
     readonly directory: string,
     private readonly path: string,
+    readonly project: string,
   ) {}
 
   static async create(root: string, workspace: string): Promise<FileStore> {
     const canonical = await realpath(workspace).catch(() => resolve(workspace))
-    const directory = join(root, "projects", digest(canonical).slice(0, 24))
+    const project = digest(canonical)
+    const directory = join(root, "projects", project.slice(0, 24))
     await mkdir(directory, { recursive: true, mode: 0o700 })
-    return new FileStore(directory, join(directory, "state.json"))
+    return new FileStore(directory, join(directory, "state.json"), project)
   }
 
   async transact<T>(fn: (state: State) => T | Promise<T>): Promise<T> {

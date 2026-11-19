@@ -1,6 +1,6 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createRuntime } from "../src/runtime.js"
@@ -55,7 +55,8 @@ test("local usage logging groups attempts, omits message text and distinguishes 
       root,
       observation.sessionId,
       observation.turnId,
-      observation.messages[0]!.text,
+      ...observation.messages.map((message) => message.text),
+      "Transport recovered",
       "private error detail",
     ]) {
       assert.ok(!content.includes(value))
@@ -77,4 +78,27 @@ test("local usage logging groups attempts, omits message text and distinguishes 
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+test("aliases of one workspace share a project identity in state and usage records", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "ysk-usage-alias-"))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const real = join(dir, "project"),
+    alias = join(dir, "alias")
+  await mkdir(real)
+  await symlink(real, alias, process.platform === "win32" ? "junction" : "dir")
+  const env = {
+    YSK_DATA_DIR: join(dir, "state"),
+    XDG_CONFIG_HOME: dir,
+    YSK_USAGE_LOG: join(dir, "usage.jsonl"),
+  }
+  const a = await createRuntime(real, undefined, env),
+    b = await createRuntime(alias, undefined, env)
+  await a.observer.observe(observation, provider(null), true)
+  await b.observer.observe({ ...observation, sessionId: "another-session" }, provider(null), true)
+  const ids = (await readFile(env.YSK_USAGE_LOG, "utf8"))
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line).project)
+  assert.deepEqual(ids, [a.store.project, a.store.project])
+  assert.equal(a.store.directory, b.store.directory)
 })

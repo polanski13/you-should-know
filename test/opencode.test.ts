@@ -22,6 +22,7 @@ test(
     let notifications = 0
     let lookups = 0
     let generations = 0
+    let unavailableLookups = 0
     let cleanup: (() => Promise<void>) | undefined
     try {
       const ctx = {
@@ -41,7 +42,11 @@ test(
           hook: async (name: string, handler: (event: never) => unknown) => {
             hooks.set(name, handler)
           },
-          get: async () => {
+          get: async ({ sessionID }: { sessionID: string }) => {
+            if (sessionID === "unavailable") {
+              unavailableLookups++
+              throw new Error("Unreachable")
+            }
             lookups++
             if (lookups === 1) throw new Error("Session metadata is temporarily unavailable")
             return { parentID: undefined }
@@ -89,6 +94,20 @@ test(
       await changed.promise
       assert.equal(signal.aborted, true)
       assert.equal(notifications, 2)
+      const unavailable = {
+        sessionID: "unavailable",
+        messages: observation.messages,
+        model: { id: "fixture", providerID: "fixture" },
+      } as never
+      for (let i = 0; i < 7; i++) {
+        hooks.get("context")!(unavailable)
+        await new Promise<void>((resolve) => setImmediate(resolve))
+      }
+      assert.equal(unavailableLookups, 2)
+      hooks.get("prompt")!({ sessionID: "unavailable", messageID: "retry" } as never)
+      hooks.get("context")!(unavailable)
+      await new Promise<void>((resolve) => setImmediate(resolve))
+      assert.equal(unavailableLookups, 3)
     } finally {
       await cleanup?.()
       for (const [key, value] of [

@@ -12,16 +12,17 @@ export default {
   async setup(ctx) {
     const config = await loadConfig({ workspace: ctx.location.directory })
     const options = observerOverrides(ctx.options)
+    const store = await FileStore.create(dataDirectory(), ctx.location.directory)
     const observer = new Observer(
-      await FileStore.create(dataDirectory(), ctx.location.directory),
+      store,
       {
         ...config.observer,
         ...options,
       },
       Date.now,
-      localUsageLog(process.env.YSK_USAGE_LOG, ctx.location.directory),
+      localUsageLog(process.env.YSK_USAGE_LOG, store.project),
     )
-    const turns = new Map<string, { id: string; step: number }>()
+    const turns = new Map<string, { id: string; step: number; failedLookups: number }>()
     const roots = new Map<string, Promise<boolean>>()
     const jobs = new Set<Promise<unknown>>()
     const lifetime = new AbortController()
@@ -45,7 +46,7 @@ export default {
     }
 
     await ctx.session.hook("prompt", (event) => {
-      turns.set(event.sessionID, { id: event.messageID, step: 0 })
+      turns.set(event.sessionID, { id: event.messageID, step: 0, failedLookups: 0 })
       launch(
         observer.beginTurn(event.sessionID, event.messageID).then(async () => {
           if (!disposed) await rpc.events.emit("changed", { sessionId: event.sessionID })
@@ -57,16 +58,22 @@ export default {
       const messages = normalizeMessages(event.messages)
       const latestUser = messages.findLast((message) => message.role === "user")
       if (!latestUser) return
-      const turn = turns.get(event.sessionID) ?? { id: digest(latestUser.text), step: 0 }
+      const turn = turns.get(event.sessionID) ?? {
+        id: digest(latestUser.text),
+        step: 0,
+        failedLookups: 0,
+      }
       turn.step++
       turns.set(event.sessionID, turn)
       if (!roots.has(event.sessionID)) {
+        if (turn.failedLookups >= 2) return
         roots.set(
           event.sessionID,
           ctx.session
             .get({ sessionID: event.sessionID }, { signal: lifetime.signal })
             .then((session) => !session.parentID)
             .catch(() => {
+              turn.failedLookups++
               roots.delete(event.sessionID)
               return false
             }),

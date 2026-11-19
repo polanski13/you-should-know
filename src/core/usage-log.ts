@@ -17,9 +17,8 @@ interface UsageEvent {
 
 export type UsageSink = (event: UsageEvent) => Promise<void>
 
-export function localUsageLog(path: string | undefined, workspace: string): UsageSink | undefined {
+export function localUsageLog(path: string | undefined, project: string): UsageSink | undefined {
   if (!path) return undefined
-  const project = digest(workspace)
   return async ({ sessionId, turnId, ...event }) => {
     const row = { ...event, project, session: digest(sessionId), turn: digest(turnId) }
     const file = await open(path, "a", 0o600)
