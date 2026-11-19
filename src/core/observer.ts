@@ -95,6 +95,11 @@ export class Observer {
   }
 
   async invalidate(sessionId: string, activeHookPrompt?: string | null): Promise<void> {
+    if (
+      typeof activeHookPrompt === "string" &&
+      (!activeHookPrompt.length || activeHookPrompt.length > 240)
+    )
+      return
     this.running.get(sessionId)?.controller.abort()
     await this.store.transact((state) => {
       const now = this.now()

@@ -10,7 +10,7 @@ const inputSchema = z.object({
   cwd: z.string().min(1),
   hook_event_name: z.string(),
   transcript_path: z.string().nullish(),
-  turn_id: z.string().optional(),
+  turn_id: z.string().min(1).max(240).optional(),
   prompt_id: z.string().min(1).max(240).optional(),
   stop_hook_active: z.boolean().optional(),
   last_assistant_message: z.string().nullish(),

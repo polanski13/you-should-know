@@ -210,3 +210,41 @@ test("identical parallel results at the same timestamp still reach the observer"
   )
   assert.equal(calls, 1)
 })
+test("a rewritten line deep in a growing prefix invalidates the saved goal", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "ysk-prefix-"))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const path = join(dir, "chat.jsonl")
+  const source = user("original", "Initial goal") + logs(310)
+  await writeFile(path, source)
+  const first = await readTranscript(path)
+  const lines = source.trimEnd().split("\n")
+  assert.ok(Buffer.byteLength(lines.slice(0, 43).join("\n")) < first.cursor.offset)
+  lines[42] = lines[42]!.replace('"type":"tool_result"', '"type":"other_event"')
+  await writeFile(path, lines.join("\n") + "\n" + tool("end", "One more result"))
+  const resumed = await readTranscript(path, first.cursor)
+  assert.equal(resumed.turnId, "t41")
+  assert.equal(resumed.steps, 269)
+  assert.deepEqual(resumed, await readTranscript(path))
+})
+
+test("malformed complete records fence off their unknown turn and invalid hook IDs preserve state", async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), "ysk-unknown-turn-"))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const path = join(dir, "chat.jsonl")
+  await writeFile(path, user("old", "First goal") + "{broken}\n" + tool("t1", "New evidence"))
+  const invalid = await readTranscript(path)
+  assert.deepEqual(invalid.messages, [])
+  await appendFile(path, user("next", "Second goal") + tool("t2", "Ready"))
+  assert.equal((await readTranscript(path, invalid.cursor)).turnId, "next")
+  const runtime = await createRuntime(dir, undefined, {
+    YSK_DATA_DIR: join(dir, "state"),
+    XDG_CONFIG_HOME: dir,
+  })
+  const submit = { session_id: "s", cwd: dir, hook_event_name: "UserPromptSubmit" }
+  await handleHook({ ...submit, turn_id: "valid" }, { host: "codex", runtime })
+  await handleHook({ ...submit, turn_id: "x".repeat(500) }, { host: "codex", runtime })
+  assert.equal(
+    await runtime.store.transact((s) => s.sessions[digest("s")]?.activeHookPrompt),
+    "valid",
+  )
+})

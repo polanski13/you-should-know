@@ -6,7 +6,7 @@ import type { TranscriptCursor } from "../core/store.js"
 import type { ContextMessage } from "../core/types.js"
 import { object } from "../providers/json-lines.js"
 import { adapterText, recentMessages } from "./messages.js"
-import { fingerprint, maxRecordBytes, readBytes, records } from "./transcript-file.js"
+import { hashRange, maxRecordBytes, readBytes, records } from "./transcript-file.js"
 
 export interface Transcript {
   messages: ContextMessage[]
@@ -21,12 +21,13 @@ interface Event {
   step?: boolean
 }
 
-function decode(line: string, offset: number): Event {
+function decode(line: string, offset: number): Event | undefined {
+  if (!line.trim()) return {}
   let entry: Record<string, unknown>
   try {
     entry = object(JSON.parse(line))
   } catch {
-    return {}
+    return undefined
   }
   if (entry.isSidechain === true) return {}
   const payload = object(entry.payload)
@@ -89,8 +90,14 @@ export function parseTranscript(text: string): Transcript {
   let offset = 0
   for (const line of text.split("\n")) {
     const event = decode(line, offset)
-    advance(position, event)
-    if (event.message) messages.push(event.message)
+    if (event) {
+      advance(position, event)
+      if (event.message) messages.push(event.message)
+    } else {
+      messages.length = 0
+      position.turnId = undefined
+      position.steps = 0
+    }
     offset += Buffer.byteLength(line) + 1
   }
   return {
@@ -106,17 +113,19 @@ async function restore(
   identity: string,
   size: number,
   modified: number,
+  changed: number,
 ) {
   if (
-    !previous ||
+    !previous?.prefixDigest ||
     previous.file !== identity ||
     previous.size > size ||
     previous.offset > previous.size ||
-    (previous.size === size && previous.modified !== modified)
+    (previous.size === size && (previous.modified !== modified || previous.changed !== changed))
   )
     return
-  if (previous.fingerprint !== (await fingerprint(file, identity, previous.size, previous.offset)))
-    return
+  // A truncate-and-regrow can look like an append, even if the original user row survives.
+  const prefix = previous.size < size ? await hashRange(file, 0, previous.offset) : undefined
+  if (prefix && prefix.copy().digest("hex") !== previous.prefixDigest) return
   let user: ContextMessage | undefined
   let promptId: string | undefined
   if (previous.user) {
@@ -125,8 +134,8 @@ async function restore(
     const line = (await readBytes(file, ref.offset, ref.length)).toString("utf8")
     if (digest(line) !== ref.hash) return
     const event = decode(line, ref.offset)
-    user = event.message
-    promptId = event.promptId
+    user = event?.message
+    promptId = event?.promptId
     if (user?.role !== "user") return
   }
   return {
@@ -134,6 +143,8 @@ async function restore(
     user,
     promptId,
     offset: previous.offset,
+    prefix,
+    prefixDigest: previous.prefixDigest,
   }
 }
 
@@ -146,7 +157,7 @@ export async function readTranscript(
     const stat = await file.stat()
     if (!stat.isFile()) throw new Error("Transcript must be a regular file")
     const identity = digest(JSON.stringify([resolve(path), stat.dev, stat.ino, stat.birthtimeMs]))
-    const saved = await restore(file, previous, identity, stat.size, stat.mtimeMs)
+    const saved = await restore(file, previous, identity, stat.size, stat.mtimeMs, stat.ctimeMs)
     const position: Position = saved?.position ?? { steps: 0 }
     let latestUser = saved?.user
     let promptId = saved?.promptId
@@ -156,7 +167,11 @@ export async function readTranscript(
     let checkpoint: Position = { ...position }
     const messages: ContextMessage[] = []
     for await (const row of records(file, start, stat.size)) {
-      if (row.text === undefined) {
+      const event = row.text === undefined ? undefined : decode(row.text, row.offset)
+      if (!event && !row.terminated && row.text !== undefined) {
+        // A writer can finish this line on the next hook. Suppress the incomplete snapshot.
+        latestUser = undefined
+      } else if (!event) {
         // Its role is unknown. Wait for a visible user before attributing later evidence.
         position.user = undefined
         position.turnId = undefined
@@ -165,14 +180,13 @@ export async function readTranscript(
         promptId = undefined
         messages.length = 0
       } else {
-        const event = decode(row.text, row.offset)
         if (event.turnId !== undefined && event.turnId !== position.turnId) {
           latestUser = undefined
           promptId = undefined
         }
         advance(position, event)
         if (event.message?.role === "user") {
-          position.user = { offset: row.offset, length: row.length, hash: digest(row.text) }
+          position.user = { offset: row.offset, length: row.length, hash: digest(row.text!) }
           latestUser = event.message
           promptId = event.promptId
         }
@@ -183,13 +197,21 @@ export async function readTranscript(
         checkpoint = { ...position }
       }
     }
+    const prefixDigest =
+      saved && start === offset
+        ? saved.prefixDigest
+        : (await hashRange(file, start, offset, saved?.prefix)).digest("hex")
     const cursor: TranscriptCursor = {
       file: identity,
       size: stat.size,
       modified: stat.mtimeMs,
+      changed: stat.ctimeMs,
+      prefixDigest,
       offset,
       ...checkpoint,
-      fingerprint: await fingerprint(file, identity, stat.size, offset),
+      fingerprint: digest(
+        JSON.stringify([identity, stat.size, stat.mtimeMs, stat.ctimeMs, offset, prefixDigest]),
+      ),
     }
     const current = await statPath(path)
     if (
@@ -197,7 +219,8 @@ export async function readTranscript(
       current.ino !== stat.ino ||
       current.birthtimeMs !== stat.birthtimeMs ||
       current.size < stat.size ||
-      (current.size === stat.size && current.mtimeMs !== stat.mtimeMs)
+      (current.size === stat.size &&
+        (current.mtimeMs !== stat.mtimeMs || current.ctimeMs !== stat.ctimeMs))
     )
       throw new Error("Transcript changed during reading")
     if (latestUser && !messages.includes(latestUser)) messages.unshift(latestUser)

@@ -13,6 +13,8 @@ const transcriptCursorSchema = z.object({
   size: byteOffset,
   offset: byteOffset,
   fingerprint: z.string(),
+  prefixDigest: z.string().length(64).optional(),
+  changed: z.number().optional(),
   modified: z.number(),
   steps: byteOffset,
   turnId: z.string().optional(),
@@ -22,7 +24,7 @@ export type TranscriptCursor = z.infer<typeof transcriptCursorSchema>
 
 const sessionSchema = z.object({
   turnId: z.string(),
-  activeHookPrompt: z.string().nullable().optional(),
+  activeHookPrompt: z.string().min(1).max(240).nullable().optional().catch(undefined),
   transcript: transcriptCursorSchema.optional(),
   touchedAt: z.number(),
   checks: z.number().int().nonnegative().default(0),

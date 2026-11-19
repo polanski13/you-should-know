@@ -15,18 +15,16 @@ export async function readBytes(file: FileHandle, start: number, length: number)
   return result
 }
 
-export async function fingerprint(
+export async function hashRange(
   file: FileHandle,
-  identity: string,
-  size: number,
-  offset: number,
-): Promise<string> {
-  const hash = createHash("sha256").update(JSON.stringify([identity, size, offset]))
-  for (const end of new Set([Math.min(size, 512), offset, size])) {
-    const length = Math.min(end, 512)
-    hash.update(await readBytes(file, end - length, length))
+  start: number,
+  end: number,
+  hash = createHash("sha256"),
+) {
+  for (let at = start; at < end; at += blockBytes) {
+    hash.update(await readBytes(file, at, Math.min(end - at, blockBytes)))
   }
-  return hash.digest("hex")
+  return hash
 }
 
 export async function* records(file: FileHandle, start: number, end: number) {
@@ -48,6 +46,7 @@ export async function* records(file: FileHandle, start: number, end: number) {
         offset,
         length,
         next,
+        terminated: true,
         text: length > maxRecordBytes ? undefined : Buffer.concat(parts, length).toString("utf8"),
       }
       offset = next
@@ -62,6 +61,7 @@ export async function* records(file: FileHandle, start: number, end: number) {
       offset,
       length,
       next: end,
+      terminated: false,
       text: length > maxRecordBytes ? undefined : Buffer.concat(parts, length).toString("utf8"),
     }
 }
