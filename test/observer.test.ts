@@ -420,3 +420,28 @@ test("optional log compaction preserves distinct lines and the position of evide
     prepareContext([goal, varied], config),
   )
 })
+test("formatting added to compact logs cannot serve as evidence", async () => {
+  const repeated = "Worker heartbeat received. Waiting for another entry."
+  const input = {
+    ...observation,
+    messages: [
+      ...observation.messages,
+      { id: "log", role: "tool" as const, text: (repeated + "\n").repeat(100) + "Job finished." },
+    ],
+  }
+  for (const [quote, expected] of [
+    ["[preceding line occurs 100 times]", "quiet"],
+    ["Job finished.", "shown"],
+  ] as const) {
+    const observer = new Observer(new MemoryStore(), { ...config, compactToolLogs: true })
+    const result = await observer.observe(
+      input,
+      provider({
+        ...finding,
+        evidence: [{ messageId: "log", quote }],
+      }),
+    )
+    assert.equal(result.status, expected)
+    if (result.status === "quiet") assert.equal(result.reason, "unsubstantiated")
+  }
+})

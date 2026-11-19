@@ -52,11 +52,19 @@ function sessionFor(
   return session
 }
 
-function grounded(finding: Finding, messages: ContextMessage[]): boolean {
+function grounded(
+  finding: Finding,
+  messages: ContextMessage[],
+  compactedSources?: ContextMessage[],
+): boolean {
   return (
     finding.evidence.every((evidence) => {
       const message = messages.find((item) => item.id === evidence.messageId)
-      return message !== undefined && message.text.includes(evidence.quote)
+      if (!message?.text.includes(evidence.quote)) return false
+      if (!compactedSources || message.role !== "tool") return true
+      // A repetition marker describes the rendering. It cannot substantiate a note.
+      const original = compactedSources.find((item) => item.id === message.id)
+      return original !== undefined && redact(original.text).includes(evidence.quote)
     }) && redact(JSON.stringify(finding)) === JSON.stringify(finding)
   )
 }
@@ -222,7 +230,7 @@ export class Observer {
           ? { status: "quiet", reason: "no_finding" }
           : finding.confidence < this.config.minConfidence
             ? { status: "quiet", reason: "low_confidence" }
-            : !grounded(finding, messages)
+            : !grounded(finding, messages, this.config.compactToolLogs ? input.messages : undefined)
               ? { status: "quiet", reason: "unsubstantiated" }
               : { status: "quiet", reason: "no_finding" }
     } catch (error) {
