@@ -187,7 +187,7 @@ The first hook scans the transcript to find the current goal and count tool resu
 
 Background output does not inject instructions into the working agent. Claude's asynchronous hooks do not surface `systemMessage` directly, so delivery happens at the next prompt. Use `ysk watch` to see notes sooner. The actual display of hook messages depends on the host interface.
 
-Claude Code can fire `Stop` before the transcript contains its final reply. When the event and the latest user record have matching prompt IDs, the observer also reads the final text supplied by the event.
+Claude Code can fire `Stop` before the transcript contains its final reply. When the prompt IDs match, the observer includes that text. On an eligible turn previously checked by a tool hook, a changed final reply can trigger one follow-up even within the same cadence window. It waits for an active check. Pause, budgets and the one-note limit still apply.
 
 The installer is idempotent, writes atomically, and preserves a first backup as `<config-file>.before-ysk`. It refuses malformed JSON or unexpected hook structures. Uninstall removes registrations marked `--managed-by-ysk`; it does not restore an old file over newer user changes. Hook commands use absolute paths to the runtime and CLI, including the bundled Node.js in release installations.
 
@@ -222,7 +222,7 @@ MCP does not automatically subscribe to another client's conversation. Its clien
 
 ## Storage and data flow
 
-To measure observer usage locally, set `YSK_USAGE_LOG` to an absolute file path in an existing writable directory in the host's environment. Each completed provider attempt appends one JSON line with its outcome, elapsed time, model when known, and hashed project, session and turn identifiers. HTTP and Codex include token counts when reported. OpenCode 2.2 exposes only response text. Missing counts mean unknown. Cache reads and writes are subsets of total input. Anthropic also reports ordinary input and, when available, writes by TTL. The file contains no conversation text. The person enabling it controls its retention. On POSIX the logger restricts its file to the owner, including when appending to an existing file.
+To measure observer usage locally, set `YSK_USAGE_LOG` to an absolute file path in an existing writable directory in the host's environment. Each completed provider attempt appends one JSON line with its outcome, elapsed time, model when known, and hashed project, session and turn identifiers. HTTP and Codex include token counts when reported. OpenCode 2.2 exposes only response text. Missing counts mean unknown. When a provider omits part of the cache breakdown, `unclassifiedInputTokens` records the input volume that cannot be priced separately. Cache reads and writes are subsets of total input. Anthropic also reports ordinary input and, when available, writes by TTL. The file contains no conversation text. The person enabling it controls its retention. On POSIX the logger restricts its file to the owner, including when appending to an existing file.
 
 ```text
 Host conversation
