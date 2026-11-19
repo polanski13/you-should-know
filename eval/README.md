@@ -16,13 +16,15 @@ Use `--split dev` or `--split holdout` to select cases and `--variant default|na
 
 ## Read the outcome
 
-Grade `blind.jsonl` before opening `cases/`. For an expected note, require a decision-relevant consequence supported by quotes from the conversation in the user's language. Record a generic warning with the right decision but missing the decisive fact as partial. For an expected quiet result, record any displayed note as a false positive. Record skipped and failed requests separately. Keep the original labels during a comparison and document ambiguous cases for the next corpus version.
+The runner marks a displayed note on a positive case as `shown_pending_grade`. Whether the note explains the right consequence is determined during grading.
+
+Give the grader only `blind.jsonl`. It contains the original conversation, an anonymous key and the observer's response. Record whether an interruption was warranted, whether the note named the specific consequence and whether its quotes support it in the user's language. Mark a generic warning that misses the decisive fact as partial. Record skipped and failed requests separately. Freeze grades before joining `references.jsonl` for the preset labels and rubrics or opening `cases/` for variant names. Document disputed labels for the next corpus version.
 
 Join grades to `cases/*.json` by `key` after grading. Compare identical episodes across variants. Report precise notes and unnecessary interruptions, missed consequences, missing decisions, model and token-count coverage, total price by billing type per completed episode, and p95 latency. A synthetic episode here comprises one eligible observation. Measuring the full cost of a user's completed task also requires the working agent's usage and a task outcome.
 
 ## November 2026 run
 
-Codex CLI 0.162.0 served `gpt-6.1-terra` for all 132 initial trials and a further 12 compact-log trials. The model and seed were fixed across the initial comparison. The repetition followed a fix that verifies compact-log evidence against the original tool text. The private trial files contain only these synthetic cases. The variant names were hidden during qualitative grading.
+Codex CLI 0.162.0 reported `gpt-6.1-terra` for all 132 initial trials and a further 12 compact-log trials. The model and seed were fixed across the initial comparison. The repetition followed a fix that verifies compact-log evidence against the original tool text. These historical results were graded with the variant names hidden and the expected labels and rubrics visible. The current grader file also hides the reference labels.
 
 | Cases and variant        | Episodes | Specific notes / expected | Partial notes | False positives / quiet | Estimated USD per episode | p95 seconds |
 | ------------------------ | -------: | ------------------------: | ------------: | ----------------------: | ------------------------: | ----------: |
@@ -39,3 +41,5 @@ Every trial reached a model decision with reported usage. The native schema remo
 Two long cases show why specific evidence matters. With the full signal visible, the observer identified 61 distinct attendees among 92 connections and zero deliveries for 41 queued invitations. Some quiet labels admit a second interpretation, including a test without an explicit pass threshold and a run where sync duration and lag may differ. The original scores include these as false positives.
 
 Both options are opt-in. Before changing either default, repeat the experiment on fresh cases, have another reviewer grade the notes, and run a session-level pilot with consenting users. Track whether tasks complete, helpful or irrelevant feedback, total task cost, missed consequences, unnecessary interruptions, error rate and p95 latency. A single model run on a small synthetic holdout cannot establish those production outcomes.
+
+A later repeat made 54 calls on the same holdout with a new trial order. The grader file hid variant names, expected labels and rubrics. Both full-holdout variants again produced eight specific notes and one partial note out of nine expected. Extra notes numbered four and three respectively. Compact logs produced three specific notes and one extra note on their six holdout cases. The estimated per-episode costs for the default and native schema were USD 0.00189 and 0.00187 in this repeat. Cache conditions explain why the price difference from the first run should not be treated as a stable saving.

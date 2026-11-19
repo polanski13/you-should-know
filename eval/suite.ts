@@ -81,6 +81,18 @@ export function trialsFor(episodes: Episode[], seed: string) {
 
 export function classify(expected: Episode["expected"], result: ObservationResult) {
   if (result.status === "error" || result.status === "skipped") return "no_decision"
-  if (result.status === "shown") return expected === "note" ? "true_positive" : "false_positive"
+  if (result.status === "shown")
+    return expected === "note" ? "shown_pending_grade" : "false_positive"
   return expected === "quiet" ? "true_negative" : "false_negative"
+}
+
+export function blindCase(key: string, episode: Episode, result: ObservationResult) {
+  const note = result.status === "shown" ? result.note : undefined
+  return {
+    key,
+    messages: observationFor(episode).messages,
+    status: result.status,
+    reason: result.status === "shown" ? undefined : result.reason,
+    note: note && { summary: note.summary, explanation: note.explanation, evidence: note.evidence },
+  }
 }

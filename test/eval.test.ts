@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { classify, corpus, observationFor, trialsFor } from "../eval/suite.js"
+import { blindCase, classify, corpus, observationFor, trialsFor } from "../eval/suite.js"
 
 test("the corpus keeps distinct development and holdout cases in each language", async () => {
   const { episodes } = await corpus()
@@ -35,4 +35,15 @@ test("an unobserved episode never counts as a correct decision to stay quiet", (
   assert.equal(classify("quiet", { status: "skipped", reason: "budget" }), "no_decision")
   assert.equal(classify("quiet", { status: "quiet", reason: "no_finding" }), "true_negative")
   assert.equal(classify("note", { status: "quiet", reason: "unsubstantiated" }), "false_negative")
+})
+test("blind grading exposes the original conversation without reference labels or variant IDs", async () => {
+  const { episodes } = await corpus()
+  const e = episodes[0]!
+  const row = JSON.parse(
+    JSON.stringify(blindCase("anonymous", e, { status: "quiet", reason: "no_finding" })),
+  )
+  assert.deepEqual(Object.keys(row).sort(), ["key", "messages", "reason", "status"])
+  assert.deepEqual(row.messages, observationFor(e).messages)
+  assert.equal(JSON.stringify(row).includes(e.id), false)
+  assert.equal(JSON.stringify(row).includes(e.rubric), false)
 })

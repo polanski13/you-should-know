@@ -7,7 +7,7 @@ import { emptyState } from "../src/core/store.js"
 import { observerConfigSchema } from "../src/core/config.js"
 import type { ModelUsage } from "../src/core/types.js"
 import { CodexProvider } from "../src/providers/codex.js"
-import { classify, corpus, observationFor, trialsFor } from "./suite.js"
+import { blindCase, classify, corpus, observationFor, trialsFor } from "./suite.js"
 import { isErrno } from "../src/core/config.js"
 
 const { values } = parseArgs({
@@ -121,24 +121,26 @@ if (!values.live) {
     const workers = await Promise.allSettled(Array.from({ length: jobs }, () => runNext()))
     for (const worker of workers) if (worker.status === "rejected") throw worker.reason
     const records = await Promise.all(
-      trials.map((t) => readFile(join(cases, t.key + ".json"), "utf8").then((s) => JSON.parse(s))),
+      trials.map(async (t) => {
+        const record = JSON.parse(await readFile(join(cases, t.key + ".json"), "utf8"))
+        return { ...record, classification: classify(t.episode.expected, record.result) }
+      }),
     )
-    const blind = records.map((r, i) => ({
-      key: r.key,
-      episode: r.episode,
-      expected: trials[i]!.episode.expected,
-      rubric: trials[i]!.episode.rubric,
-      status: r.result.status,
-      reason: r.result.reason,
-      note: r.result.note && {
-        summary: r.result.note.summary,
-        explanation: r.result.note.explanation,
-        evidence: r.result.note.evidence,
-      },
-    }))
+    const blind = records.map((r, i) => blindCase(r.key, trials[i]!.episode, r.result))
     await writeFile(
       join(out, "blind.jsonl"),
       blind.map((r) => JSON.stringify(r)).join("\n") + "\n",
+      { mode: 0o600 },
+    )
+    const references = trials.map(({ key, episode }) => ({
+      key,
+      episode: episode.id,
+      expected: episode.expected,
+      rubric: episode.rubric,
+    }))
+    await writeFile(
+      join(out, "references.jsonl"),
+      references.map((r) => JSON.stringify(r)).join("\n") + "\n",
       { mode: 0o600 },
     )
     for (const variant of ["default", "native-schema", "compact-logs"]) {
